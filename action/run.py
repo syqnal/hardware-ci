@@ -22,8 +22,10 @@ from checks.step import run_step
 from checks.gerber import run_gerber
 from checks.synthesis import run_synthesis
 from checks.formal import run_formal
+from checks.gdsii import run_gdsii
+from checks.openlane_flow import run_openlane_flow
 
-ACTION_VERSION = "1.1.0"
+ACTION_VERSION = "2.0.0"
 
 
 def env(key: str) -> bool:
@@ -83,6 +85,14 @@ def main() -> None:
     if env("INPUT_RUN_FORMAL"):
         for f in find("*.sby"):
             checks.append(run_formal(f))
+
+    if env("INPUT_RUN_GDSII"):
+        for f in find("*.gds") + find("*.oas") + find("*.gds.gz"):
+            checks.append(run_gdsii(f))
+
+    if env("INPUT_RUN_OPENLANE"):
+        for f in find("config.json"):
+            checks.extend(run_openlane_flow(f))  # emits one check per pipeline stage
 
     artifact = {
         "schema_version": "1.0",
