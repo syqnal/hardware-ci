@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from ._base import check_obj, run_tool
+from .lvs import run_lvs_from_report, _netgen_version
 
 
 _SUPPORTED_PDKS = {"sky130a", "sky130b", "sky130", "gf180mcu"}
@@ -134,6 +135,17 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
         return summary, count, []
 
     return summary, 0, []
+
+
+def _parse_lvs(run_dir: Path, tool_version: str | None) -> dict | None:
+    """Find and parse Netgen LVS report produced by OpenLane signoff."""
+    # OpenLane2 places LVS reports under reports/signoff/ with *lvs* in the name
+    candidates = sorted((run_dir / "reports" / "signoff").glob("*lvs*"), reverse=True)
+    if not candidates:
+        candidates = sorted(run_dir.rglob("*lvs*.rpt"), reverse=True)
+    if not candidates:
+        return None
+    return run_lvs_from_report(candidates[0], tool_version)
 
 
 def _parse_gdsii(run_dir: Path, config_dir: Path) -> tuple[dict, bool]:
@@ -287,5 +299,11 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
                                           "plain_text": "OpenLane flow did not produce a final GDS"}],
         summary=gds_summary,
     ))
+
+    # 6 — LVS (Netgen, only if report exists — OpenLane runs LVS as part of signoff)
+    netgen_ver = _netgen_version()
+    lvs_check = _parse_lvs(run_dir, netgen_ver)
+    if lvs_check is not None:
+        results.append(lvs_check)
 
     return results

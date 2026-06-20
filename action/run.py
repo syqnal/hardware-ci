@@ -23,6 +23,7 @@ from checks.gerber import run_gerber
 from checks.synthesis import run_synthesis
 from checks.formal import run_formal
 from checks.gdsii import run_gdsii
+from checks.lvs import run_lvs
 from checks.openlane_flow import run_openlane_flow
 
 ACTION_VERSION = "2.0.0"
@@ -89,6 +90,16 @@ def main() -> None:
     if env("INPUT_RUN_GDSII"):
         for f in find("*.gds") + find("*.oas") + find("*.gds.gz"):
             checks.append(run_gdsii(f))
+
+    if env("INPUT_RUN_LVS"):
+        # Standalone LVS: pair each .spice/.cdl with a .gds of the same stem
+        for net in find("*.spice") + find("*.cdl"):
+            gds = net.with_suffix(".gds")
+            if not gds.exists():
+                gds_matches = list(Path(".").rglob(net.stem + ".gds"))
+                gds = gds_matches[0] if gds_matches else None
+            if gds:
+                checks.append(run_lvs(net, gds))
 
     if env("INPUT_RUN_OPENLANE"):
         for f in find("config.json"):
