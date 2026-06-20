@@ -137,6 +137,44 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
     return summary, 0, []
 
 
+def _parse_power(run_dir: Path) -> dict | None:
+    """Parse OpenROAD power report — total/internal/switching/leakage in mW.
+
+    OpenROAD report format (from report_power):
+        Group       Internal  Switching   Leakage      Total
+        ...
+        Total       1.61e-03  7.07e-04   5.14e-05   2.37e-03  100%
+    Units are Watts; we convert to mW for readability.
+    """
+    candidates = sorted((run_dir / "reports" / "signoff").glob("*power*"), reverse=True)
+    if not candidates:
+        candidates = sorted(run_dir.rglob("*power*.rpt"), reverse=True)
+    if not candidates:
+        return None
+
+    text = candidates[0].read_text(errors="replace")
+
+    # Match the "Total" summary row: 4 scientific-notation numbers
+    total_re = re.compile(
+        r"^Total\s+([\d.e+\-]+)\s+([\d.e+\-]+)\s+([\d.e+\-]+)\s+([\d.e+\-]+)",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    m = total_re.search(text)
+    if not m:
+        return None
+
+    def to_mw(s: str) -> float:
+        return round(float(s) * 1000, 4)
+
+    summary = {
+        "internal_power_mw": to_mw(m.group(1)),
+        "switching_power_mw": to_mw(m.group(2)),
+        "leakage_power_mw":   to_mw(m.group(3)),
+        "total_power_mw":     to_mw(m.group(4)),
+    }
+    return summary
+
+
 def _parse_lvs(run_dir: Path, tool_version: str | None) -> dict | None:
     """Find and parse Netgen LVS report produced by OpenLane signoff."""
     # OpenLane2 places LVS reports under reports/signoff/ with *lvs* in the name
@@ -300,7 +338,17 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         summary=gds_summary,
     ))
 
-    # 6 — LVS (Netgen, only if report exists — OpenLane runs LVS as part of signoff)
+    # 6 — POWER (OpenROAD report_power, only if report exists)
+    power_summary = _parse_power(run_dir)
+    if power_summary is not None:
+        results.append(check_obj(
+            "POWER", config_file, "openroad", version,
+            status="PASS",  # power is a metric — PASS means the report was produced
+            duration_ms=ms,
+            summary=power_summary,
+        ))
+
+    # 7 — LVS (Netgen, only if report exists — OpenLane runs LVS as part of signoff)
     netgen_ver = _netgen_version()
     lvs_check = _parse_lvs(run_dir, netgen_ver)
     if lvs_check is not None:
