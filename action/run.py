@@ -21,8 +21,9 @@ from checks.bom import run_bom
 from checks.step import run_step
 from checks.gerber import run_gerber
 from checks.synthesis import run_synthesis
+from checks.formal import run_formal
 
-ACTION_VERSION = "1.0.0"
+ACTION_VERSION = "1.1.0"
 
 
 def env(key: str) -> bool:
@@ -78,6 +79,10 @@ def main() -> None:
         for f in find("*.v") + find("*.sv"):
             if not _is_testbench(f):
                 checks.append(run_synthesis(f))
+
+    if env("INPUT_RUN_FORMAL"):
+        for f in find("*.sby"):
+            checks.append(run_formal(f))
 
     artifact = {
         "schema_version": "1.0",
