@@ -1,0 +1,59 @@
+name: "Syqnal Hardware CI"
+description: "Runs EDA verification checks (DRC, ERC, RTL lint/sim, SPICE, synthesis) and emits syqnal-verification.json"
+author: "syqnal"
+
+inputs:
+  syqnal_project_slug:
+    description: "Syqnal project slug — embedded in the artifact for routing"
+    required: true
+  run_drc:
+    description: "Run KiCad PCB DRC"
+    required: false
+    default: "false"
+  run_erc:
+    description: "Run KiCad schematic ERC"
+    required: false
+    default: "false"
+  run_rtl_lint:
+    description: "Run Verilator lint on Verilog/SystemVerilog"
+    required: false
+    default: "false"
+  run_rtl_sim:
+    description: "Run Icarus Verilog testbench simulation"
+    required: false
+    default: "false"
+  run_spice:
+    description: "Run ngspice simulation"
+    required: false
+    default: "false"
+  run_bom:
+    description: "Parse and validate bill of materials CSV"
+    required: false
+    default: "false"
+  run_step:
+    description: "Validate STEP/STP 3D geometry"
+    required: false
+    default: "false"
+  run_gerber:
+    description: "Check Gerber files for required layers"
+    required: false
+    default: "false"
+  run_synthesis:
+    description: "Run Yosys RTL synthesis"
+    required: false
+    default: "false"
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  env:
+    INPUT_SYQNAL_PROJECT_SLUG: ${{ inputs.syqnal_project_slug }}
+    INPUT_RUN_DRC: ${{ inputs.run_drc }}
+    INPUT_RUN_ERC: ${{ inputs.run_erc }}
+    INPUT_RUN_RTL_LINT: ${{ inputs.run_rtl_lint }}
+    INPUT_RUN_RTL_SIM: ${{ inputs.run_rtl_sim }}
+    INPUT_RUN_SPICE: ${{ inputs.run_spice }}
+    INPUT_RUN_BOM: ${{ inputs.run_bom }}
+    INPUT_RUN_STEP: ${{ inputs.run_step }}
+    INPUT_RUN_GERBER: ${{ inputs.run_gerber }}
+    INPUT_RUN_SYNTHESIS: ${{ inputs.run_synthesis }}
