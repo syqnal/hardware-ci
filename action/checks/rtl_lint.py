@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from ._base import check_obj, run_tool
+from .rtl_sim import design_sources_for
 
 
 _MSG_RE = re.compile(
@@ -22,13 +23,14 @@ def _verilator_version() -> str | None:
 
 def run_rtl_lint(v_file: Path) -> dict:
     version = _verilator_version()
+    sources = design_sources_for(v_file)
 
     rc, stdout, stderr, duration_ms = run_tool([
         "verilator",
         "--lint-only",
         "--Wall",
         "-sv",           # accept SystemVerilog syntax
-        str(v_file),
+        *sources,
     ])
 
     combined = stdout + stderr

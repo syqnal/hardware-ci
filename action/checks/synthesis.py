@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from ._base import check_obj, run_tool
+from .rtl_sim import design_sources_for
 
 
 _VERSION_RE = re.compile(r"Yosys (\S+)")
@@ -25,6 +26,7 @@ def _infer_top_module(v_file: Path) -> str:
 def run_synthesis(v_file: Path) -> dict:
     version = _yosys_version()
     top = _infer_top_module(v_file)
+    sources = " ".join(design_sources_for(v_file))
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         stat_path = Path(tmp.name)
@@ -32,7 +34,7 @@ def run_synthesis(v_file: Path) -> dict:
     # Run: read → synth → write stat JSON
     # -p passes a script inline; stat -json writes machine-readable cell counts
     script = (
-        f"read_verilog -sv {v_file}; "
+        f"read_verilog -sv {sources}; "
         f"synth -top {top} -flatten; "
         f"stat -json -outfile {stat_path}"
     )

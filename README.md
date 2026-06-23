@@ -17,6 +17,10 @@ proof-of-work results on project pages.
 | `run_step` | FreeCAD CLI / header check | STEP geometry validation |
 | `run_gerber` | built-in layer check | Gerber fabrication layer completeness |
 | `run_synthesis` | Yosys | RTL synthesis — cell/wire/flop counts |
+| `run_formal` | SymbiYosys | Formal proof / cover runs from `.sby` files |
+| `run_gdsii` | KLayout | Standalone GDS/OAS structure validation |
+| `run_lvs` | Netgen | Standalone layout-vs-schematic for paired SPICE/CDL + GDS |
+| `run_openlane` | OpenLane/OpenROAD | RTL→GDSII flow, emitting synthesis, P&R, STA, DRC, power, LVS, GDSII checks |
 
 ## Output schema
 

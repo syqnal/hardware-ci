@@ -16,6 +16,8 @@ _DUMPFILE_RE = re.compile(r'\$dumpfile\s*\(\s*"([^"]+)"', re.IGNORECASE)
 _VCD_VAR_RE = re.compile(r"^\$var\b", re.MULTILINE)
 
 _VCD_MAX_BYTES = 500_000  # skip inline encoding above 500 KB
+_TB_DIR_NAMES = {"sim", "sims", "simulation", "simulations", "test", "tests", "tb", "testbench", "testbenches"}
+_HDL_SUFFIXES = {".v", ".sv"}
 
 
 def _iverilog_version() -> str | None:
@@ -61,22 +63,117 @@ def _encode_vcd(vcd_path: Path) -> tuple[str | None, int | None]:
         return None, None
 
 
+def _is_testbench_path(path: Path) -> bool:
+    stem = path.stem.lower()
+    parts = {part.lower() for part in path.parts}
+    filename_matches = (
+        stem.startswith("tb_")
+        or stem.startswith("tb-")
+        or stem.endswith("_tb")
+        or stem.endswith("-tb")
+        or stem.endswith("_test")
+        or stem.endswith("-test")
+        or "testbench" in stem
+    )
+    if filename_matches:
+        return True
+
+    if parts & _TB_DIR_NAMES:
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            return False
+        return bool(re.search(r"\$(?:finish|fatal|dumpfile|dumpvars)\b|\bmodule\s+tb[_A-Za-z0-9$]*", text, re.IGNORECASE))
+
+    return False
+
+
+def is_testbench_path(path: Path) -> bool:
+    return _is_testbench_path(path)
+
+
+def _repo_root() -> Path:
+    return Path(".").resolve()
+
+
+def _safe_relative_to(path: Path, root: Path) -> Path:
+    try:
+        return path.resolve().relative_to(root)
+    except ValueError:
+        return path
+
+
+def _hdl_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    for suffix in _HDL_SUFFIXES:
+        files.extend(root.rglob(f"*{suffix}"))
+    return sorted(set(files))
+
+
+def _source_root_for_testbench(tb_file: Path) -> Path:
+    """Pick the smallest useful RTL root for a testbench.
+
+    Common repos place testbenches under rtl/sim or test/ while DUT modules live
+    in the parent RTL directory.  Using tb_file.parent alone misses those DUTs.
+    Walk upward until an ancestor contains at least one non-testbench HDL file.
+    """
+    root = _repo_root()
+    tb_abs = tb_file.resolve()
+    current = tb_abs.parent
+
+    while True:
+        hdl = _hdl_files(current)
+        non_tb = [f for f in hdl if f.resolve() != tb_abs and not _is_testbench_path(_safe_relative_to(f, root))]
+        if non_tb:
+            return current
+        if current == root or current == current.parent:
+            return root
+        current = current.parent
+
+
+def _sources_for_testbench(tb_file: Path) -> list[str]:
+    root = _repo_root()
+    source_root = _source_root_for_testbench(tb_file)
+    tb_abs = tb_file.resolve()
+    hdl = _hdl_files(source_root)
+
+    design_sources = [
+        f for f in hdl
+        if f.resolve() != tb_abs and not _is_testbench_path(_safe_relative_to(f, root))
+    ]
+    other_testbench_helpers = [
+        f for f in hdl
+        if f.resolve() != tb_abs and _is_testbench_path(_safe_relative_to(f, root))
+    ]
+
+    # Design files first, helper packages/testbench support next, target testbench last.
+    ordered = sorted(design_sources) + sorted(other_testbench_helpers) + [tb_file]
+    return [str(f) for f in ordered]
+
+
+def design_sources_for(path: Path) -> list[str]:
+    root = _repo_root()
+    current = path.resolve().parent
+    while True:
+        hdl = _hdl_files(current)
+        design_sources = [
+            f for f in hdl
+            if not _is_testbench_path(_safe_relative_to(f, root))
+        ]
+        if design_sources:
+            return [str(f) for f in sorted(design_sources)]
+        if current == root or current == current.parent:
+            return [str(path)]
+        current = current.parent
+
+
 def run_rtl_sim(tb_file: Path) -> dict:
     version = _iverilog_version()
 
     with tempfile.NamedTemporaryFile(suffix=".vvp", delete=False) as tmp:
         vvp_path = Path(tmp.name)
 
-    # Collect all .v/.sv files in the same directory tree to include as sources.
-    src_dir = tb_file.parent
-    while src_dir != src_dir.parent:
-        v_files = list(src_dir.rglob("*.v")) + list(src_dir.rglob("*.sv"))
-        if v_files:
-            break
-        src_dir = src_dir.parent
-
-    sources = [str(f) for f in v_files if f != tb_file]
-    sources.append(str(tb_file))  # testbench last so it can reference other modules
+    sources = _sources_for_testbench(tb_file)
 
     compile_rc, _, compile_err, compile_ms = run_tool([
         "iverilog", "-g2012", "-o", str(vvp_path), *sources
@@ -126,6 +223,7 @@ def run_rtl_sim(tb_file: Path) -> dict:
         "assertions_passed": assertions_passed,
         "assertions_failed": assertions_failed,
         "sim_time_ns": sim_time_ns,
+        "source_count": len(sources),
     }
     if vcd_b64 is not None:
         summary["vcd_b64"] = vcd_b64

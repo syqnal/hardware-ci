@@ -42,6 +42,22 @@ inputs:
     description: "Run Yosys RTL synthesis"
     required: false
     default: "false"
+  run_formal:
+    description: "Run SymbiYosys formal verification on .sby files"
+    required: false
+    default: "false"
+  run_gdsii:
+    description: "Validate GDS/OAS layout files with KLayout"
+    required: false
+    default: "false"
+  run_lvs:
+    description: "Run standalone LVS with Netgen when SPICE/CDL netlists pair with GDS"
+    required: false
+    default: "false"
+  run_openlane:
+    description: "Run OpenLane RTL-to-GDSII flow for supported sky130/gf180 configs"
+    required: false
+    default: "false"
 
 runs:
   using: "docker"
@@ -57,3 +73,7 @@ runs:
     INPUT_RUN_STEP: ${{ inputs.run_step }}
     INPUT_RUN_GERBER: ${{ inputs.run_gerber }}
     INPUT_RUN_SYNTHESIS: ${{ inputs.run_synthesis }}
+    INPUT_RUN_FORMAL: ${{ inputs.run_formal }}
+    INPUT_RUN_GDSII: ${{ inputs.run_gdsii }}
+    INPUT_RUN_LVS: ${{ inputs.run_lvs }}
+    INPUT_RUN_OPENLANE: ${{ inputs.run_openlane }}

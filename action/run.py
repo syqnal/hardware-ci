@@ -15,7 +15,7 @@ from pathlib import Path
 from checks.drc import run_drc
 from checks.erc import run_erc
 from checks.rtl_lint import run_rtl_lint
-from checks.rtl_sim import run_rtl_sim
+from checks.rtl_sim import run_rtl_sim, is_testbench_path
 from checks.spice import run_spice
 from checks.bom import run_bom
 from checks.step import run_step
@@ -26,7 +26,7 @@ from checks.gdsii import run_gdsii
 from checks.lvs import run_lvs
 from checks.openlane_flow import run_openlane_flow
 
-ACTION_VERSION = "2.0.0"
+ACTION_VERSION = "2.2.1"
 
 
 def env(key: str) -> bool:
@@ -125,8 +125,7 @@ def main() -> None:
 
 
 def _is_testbench(path: Path) -> bool:
-    name = path.stem.lower()
-    return name.startswith("tb_") or name.endswith("_tb") or name.endswith("_test")
+    return is_testbench_path(path)
 
 
 def _find_gerber_dirs() -> list[Path]:
