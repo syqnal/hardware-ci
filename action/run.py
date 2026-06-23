@@ -26,7 +26,7 @@ from checks.gdsii import run_gdsii
 from checks.lvs import run_lvs
 from checks.openlane_flow import run_openlane_flow
 
-ACTION_VERSION = "2.3.4"
+ACTION_VERSION = "2.3.5"
 
 
 def env(key: str) -> bool:

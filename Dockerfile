@@ -33,6 +33,20 @@ RUN apt-get update && \
       netgen-lvs \
     && rm -rf /var/lib/apt/lists/*
 
+# OpenROAD is not packaged in Ubuntu 22.04. Use the OpenROAD Flow Scripts
+# documented prebuilt package for Ubuntu 22.04 so OpenLane signoff can run.
+ARG OPENROAD_DEB_URL=https://github.com/Precision-Innovations/OpenROAD/releases/download/2024-12-14/openroad_2.0-17598-ga008522d8_amd64-ubuntu-22.04.deb
+RUN if [[ "$(dpkg --print-architecture)" != "amd64" ]]; then \
+      echo "OpenROAD prebuilt package is only available for linux/amd64 in this runner image" >&2; \
+      exit 1; \
+    fi && \
+    apt-get update && \
+    curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 1800 \
+      "${OPENROAD_DEB_URL}" -o /tmp/openroad.deb && \
+    apt-get -o Dpkg::Options::="--force-overwrite" install -y --no-install-recommends /tmp/openroad.deb && \
+    rm -f /tmp/openroad.deb && \
+    rm -rf /var/lib/apt/lists/*
+
 # OSS CAD Suite for latest Yosys (0.38+) — Ubuntu apt ships 0.17 which lacks JSON stat output
 ARG OSS_CAD_DATE=2024-11-01
 RUN oss_date="${OSS_CAD_DATE//-/}" && \
