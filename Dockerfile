@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1.7
+FROM --platform=linux/amd64 hdlc/yosys:latest AS yosys_tools
+
 FROM ubuntu:22.04
 
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
@@ -14,6 +16,7 @@ RUN apt-get update && \
       git \
       gnupg \
       jq \
+      make \
       software-properties-common \
       tar \
       unzip \
@@ -33,6 +36,8 @@ RUN apt-get update && \
       netgen-lvs \
     && rm -rf /var/lib/apt/lists/*
 
+RUN ln -sf /usr/lib/netgen/bin/netgen /usr/local/bin/netgen
+
 # OpenROAD is not packaged in Ubuntu 22.04. Use the OpenROAD Flow Scripts
 # documented prebuilt package for Ubuntu 22.04 so OpenLane signoff can run.
 ARG OPENROAD_DEB_URL=https://github.com/Precision-Innovations/OpenROAD/releases/download/2024-12-14/openroad_2.0-17598-ga008522d8_amd64-ubuntu-22.04.deb
@@ -47,21 +52,18 @@ RUN if [[ "$(dpkg --print-architecture)" != "amd64" ]]; then \
     rm -f /tmp/openroad.deb && \
     rm -rf /var/lib/apt/lists/*
 
-# OSS CAD Suite for latest Yosys (0.38+) — Ubuntu apt ships 0.17 which lacks JSON stat output
-ARG OSS_CAD_DATE=2024-11-01
-RUN oss_date="${OSS_CAD_DATE//-/}" && \
-    case "$(uname -m)" in \
-      x86_64|amd64) oss_arch="x64" ;; \
-      aarch64|arm64) oss_arch="arm64" ;; \
-      *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
-    esac && \
-    curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 1800 --progress-bar \
-      "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-linux-${oss_arch}-${oss_date}.tgz" \
-      -o /tmp/oss-cad.tgz && \
-    tar -xzf /tmp/oss-cad.tgz -C /opt && \
-    rm /tmp/oss-cad.tgz
+# Modern Yosys from the public HDL containers. This avoids downloading the
+# very large OSS CAD Suite tarball during every Dockerfile-action build.
+COPY --from=yosys_tools /usr/local/bin/yosys* /usr/local/bin/
+COPY --from=yosys_tools /usr/local/share/yosys /usr/local/share/yosys
+COPY --from=yosys_tools /usr/lib/x86_64-linux-gnu/libffi.so.7* /usr/lib/x86_64-linux-gnu/
+RUN ldconfig && yosys -V && yosys-abc -c quit
 
-ENV PATH="/opt/oss-cad-suite/bin:${PATH}"
+# SymbiYosys is a small Python/Tcl wrapper; install it separately from source.
+ARG SBY_REF=main
+RUN git clone --depth 1 --branch "${SBY_REF}" https://github.com/YosysHQ/sby.git /tmp/sby && \
+    make -C /tmp/sby install PREFIX=/usr/local && \
+    rm -rf /tmp/sby
 
 # OpenLane2 orchestrates OpenROAD/OpenSTA and volare manages open PDKs.
 ARG OPENLANE_VERSION=

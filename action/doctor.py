@@ -19,7 +19,7 @@ REQUIRED_COMMANDS = [
     ("yosys", ["yosys", "--version"]),
     ("sby", ["sby", "--version"]),
     ("openroad", ["openroad", "-version"]),
-    ("klayout", ["klayout", "--version"]),
+    ("klayout", ["klayout", "-b", "-v"]),
     ("magic", ["magic", "--version"]),
     ("netgen", ["netgen", "-version"]),
 ]
