@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM ubuntu:22.04
 
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
@@ -60,12 +61,18 @@ RUN if [[ -n "${OPENLANE_VERSION}" ]]; then \
 # The build must fail if the PDK cannot be installed.
 ARG INSTALL_SKY130=true
 ARG INSTALL_GF180=false
-RUN mkdir -p /opt/pdks && \
+RUN --mount=type=secret,id=github_token,required=false \
+    mkdir -p /opt/pdks && \
+    metadata_file="$(python3 -c 'import pathlib, site, sys; paths=[p for base in map(pathlib.Path, site.getsitepackages()) for p in base.rglob("tool_metadata.yml")]; print(paths[0]) if paths else sys.exit(1)')" && \
+    token_args=() && \
+    if [[ -s /run/secrets/github_token ]]; then \
+      token_args=(--token "$(cat /run/secrets/github_token)"); \
+    fi && \
     if [[ "${INSTALL_SKY130}" == "true" ]]; then \
-      python3 -m volare fetch --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd; \
+      python3 -m volare fetch "${token_args[@]}" --metadata-file "${metadata_file}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd; \
     fi && \
     if [[ "${INSTALL_GF180}" == "true" ]]; then \
-      python3 -m volare fetch --pdk gf180mcu --pdk-root /opt/pdks; \
+      python3 -m volare fetch "${token_args[@]}" --metadata-file "${metadata_file}" --pdk gf180mcu --pdk-root /opt/pdks; \
     fi
 
 ENV PDK_ROOT=/opt/pdks
