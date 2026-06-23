@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from ._base import check_obj, run_tool
+from .gdsii import inspect_layout_file
 from .lvs import run_lvs_from_report, _netgen_version
 
 
@@ -198,11 +199,16 @@ def _parse_gdsii(run_dir: Path, config_dir: Path) -> tuple[dict, bool]:
 
     gds = gds_files[0]
     size_bytes = gds.stat().st_size
-    return {
+    summary, violations, status, _ms, _version = inspect_layout_file(gds)
+    summary = {
+        **summary,
         "gds_produced": True,
         "gds_path": str(gds.relative_to(config_dir) if gds.is_relative_to(config_dir) else gds.name),
         "gds_size_bytes": size_bytes,
-    }, size_bytes > 0
+    }
+    if violations:
+        summary["layout_preview_error"] = violations[0].get("plain_text")
+    return summary, size_bytes > 0 and status == "PASS"
 
 
 # ── OpenLane version ───────────────────────────────────────────────────────────
@@ -223,17 +229,23 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     version = _openlane_version()
 
     # Validate this is an OpenLane config with a supported PDK
+    pdk = ""
     try:
-        cfg = json.loads(config_file.read_text())
+        text = config_file.read_text(errors="replace")
+        if config_file.suffix.lower() == ".json":
+            cfg = json.loads(text)
+            pdk = str(cfg.get("PDK", cfg.get("pdk", ""))).lower()
+        else:
+            m = re.search(r"set\s+(?:::env\()?PDK\)?\s+\"?([A-Za-z0-9_\\-.]+)\"?", text)
+            pdk = (m.group(1) if m else "").lower()
     except Exception:
         return [check_obj(
             "SYNTHESIS", config_file, "openlane", version,
             status="ERROR", duration_ms=0,
             violations=[{"type": "config_error", "severity": "error",
-                         "plain_text": f"Cannot parse {config_file.name} as JSON"}],
+                         "plain_text": f"Cannot parse {config_file.name} as an OpenLane config"}],
         )]
 
-    pdk = str(cfg.get("PDK", cfg.get("pdk", ""))).lower()
     if not any(p in pdk for p in _SUPPORTED_PDKS):
         return []  # Not an OpenLane project we support — skip silently
 

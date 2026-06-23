@@ -1,5 +1,5 @@
 name: "Syqnal Hardware CI"
-description: "Runs EDA verification checks (DRC, ERC, RTL lint/sim, SPICE, synthesis) and emits syqnal-verification.json"
+description: "Runs hardware/IC verification checks and emits syqnal-verification.json"
 author: "syqnal"
 
 inputs:
@@ -61,7 +61,7 @@ inputs:
 
 runs:
   using: "docker"
-  image: "Dockerfile"
+  image: "docker://ghcr.io/syqnal/hardware-ci:2.3.0"
   env:
     INPUT_SYQNAL_PROJECT_SLUG: ${{ inputs.syqnal_project_slug }}
     INPUT_RUN_DRC: ${{ inputs.run_drc }}

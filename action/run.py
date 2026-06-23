@@ -26,7 +26,7 @@ from checks.gdsii import run_gdsii
 from checks.lvs import run_lvs
 from checks.openlane_flow import run_openlane_flow
 
-ACTION_VERSION = "2.2.1"
+ACTION_VERSION = "2.3.0"
 
 
 def env(key: str) -> bool:
@@ -102,7 +102,7 @@ def main() -> None:
                 checks.append(run_lvs(net, gds))
 
     if env("INPUT_RUN_OPENLANE"):
-        for f in find("config.json"):
+        for f in find("config.json") + find("config.tcl"):
             checks.extend(run_openlane_flow(f))  # emits one check per pipeline stage
 
     artifact = {

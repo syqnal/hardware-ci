@@ -1,0 +1,11 @@
+.git
+.github
+__pycache__
+*.pyc
+.pytest_cache
+syqnal-verification.json
+runs
+**/runs
+**/*.vcd
+**/*.fst
+**/*.lxt
