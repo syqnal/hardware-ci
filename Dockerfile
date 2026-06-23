@@ -61,18 +61,22 @@ RUN if [[ -n "${OPENLANE_VERSION}" ]]; then \
 # The build must fail if the PDK cannot be installed.
 ARG INSTALL_SKY130=true
 ARG INSTALL_GF180=false
+ARG SKY130_PDK_VERSION=sky130-fa87f8f4bbcc7255b6f0c0fb506960f531ae2392
+ARG GF180_PDK_VERSION=
 RUN --mount=type=secret,id=github_token,required=false \
     mkdir -p /opt/pdks && \
-    metadata_file="$(python3 -c 'import pathlib, site, sys; paths=[p for base in map(pathlib.Path, site.getsitepackages()) for p in base.rglob("tool_metadata.yml")]; print(paths[0]) if paths else sys.exit(1)')" && \
     token_args=() && \
     if [[ -s /run/secrets/github_token ]]; then \
       token_args=(--token "$(cat /run/secrets/github_token)"); \
     fi && \
     if [[ "${INSTALL_SKY130}" == "true" ]]; then \
-      python3 -m volare fetch "${token_args[@]}" --metadata-file "${metadata_file}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd; \
+      python3 -m volare fetch "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd "${SKY130_PDK_VERSION}" && \
+      python3 -m volare enable "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd "${SKY130_PDK_VERSION}"; \
     fi && \
     if [[ "${INSTALL_GF180}" == "true" ]]; then \
-      python3 -m volare fetch "${token_args[@]}" --metadata-file "${metadata_file}" --pdk gf180mcu --pdk-root /opt/pdks; \
+      if [[ -z "${GF180_PDK_VERSION}" ]]; then echo "GF180_PDK_VERSION is required when INSTALL_GF180=true" >&2; exit 1; fi && \
+      python3 -m volare fetch "${token_args[@]}" --pdk gf180mcu --pdk-root /opt/pdks "${GF180_PDK_VERSION}" && \
+      python3 -m volare enable "${token_args[@]}" --pdk gf180mcu --pdk-root /opt/pdks "${GF180_PDK_VERSION}"; \
     fi
 
 ENV PDK_ROOT=/opt/pdks
