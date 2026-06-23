@@ -61,7 +61,7 @@ RUN if [[ -n "${OPENLANE_VERSION}" ]]; then \
 # The build must fail if the PDK cannot be installed.
 ARG INSTALL_SKY130=true
 ARG INSTALL_GF180=false
-ARG SKY130_PDK_VERSION=sky130-fa87f8f4bbcc7255b6f0c0fb506960f531ae2392
+ARG SKY130_PDK_VERSION=fa87f8f4bbcc7255b6f0c0fb506960f531ae2392
 ARG GF180_PDK_VERSION=
 RUN --mount=type=secret,id=github_token,required=false \
     mkdir -p /opt/pdks && \
