@@ -120,19 +120,31 @@ if top is not None and bbox is not None and bbox.is_valid():
 
 result = {
     "top_cell": top_name,
+    "topCell": top_name,
     "cell_count": len(cells),
+    "cellCount": len(cells),
     "layer_count": len(layers),
+    "layerCount": len(layers),
     "bbox_um": {
         "x_min": round(bbox.left  * layout.dbu, 4),
         "y_min": round(bbox.bottom * layout.dbu, 4),
         "x_max": round(bbox.right * layout.dbu, 4),
         "y_max": round(bbox.top  * layout.dbu, 4),
+        "xMin": round(bbox.left  * layout.dbu, 4),
+        "yMin": round(bbox.bottom * layout.dbu, 4),
+        "xMax": round(bbox.right * layout.dbu, 4),
+        "yMax": round(bbox.top  * layout.dbu, 4),
     } if bbox and bbox.is_valid() else None,
     "layout_preview_kind": "svg",
+    "layoutPreviewKind": "svg",
     "layout_preview_source": "klayout_geometry",
+    "layoutPreviewSource": "klayout_geometry",
     "layout_preview_svg_b64": preview_svg,
+    "layoutPreviewSvgB64": preview_svg,
     "layout_preview_shape_count": preview_shape_count,
+    "layoutPreviewShapeCount": preview_shape_count,
     "layout_preview_truncated": preview_truncated,
+    "layoutPreviewTruncated": preview_truncated,
 }
 print(json.dumps(result))
 """

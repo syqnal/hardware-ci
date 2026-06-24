@@ -27,17 +27,17 @@ proof-of-work results on project pages.
 `syqnal-verification.json` — see Syqnal's `src/lib/verificationImport.ts` for
 the full type definition consumed on the platform side.
 
-GDSII/OAS checks include a `summary.layout_preview_svg_b64` field when KLayout
-can render the actual geometry into a compact SVG preview. Syqnal displays that
-preview in the public CI verification panel alongside top cell, layer count,
-bounding box, and file size metadata.
+GDSII/OAS checks include `summary.layout_preview_svg_b64` and
+`summary.layoutPreviewSvgB64` when KLayout can render the actual geometry into a
+compact SVG preview. Syqnal displays that preview in the public CI verification
+panel alongside top cell, layer count, bounding box, and file size metadata.
 
 ## Runner image
 
 The GitHub Action uses the prebuilt container image:
 
 ```text
-ghcr.io/syqnal/hardware-ci:2.4.0
+ghcr.io/syqnal/hardware-ci:2.5.0
 ```
 
 The image is intentionally heavy: it contains the hardware and IC toolchain plus
@@ -58,7 +58,7 @@ Included toolchain:
 Build locally:
 
 ```bash
-docker build -t ghcr.io/syqnal/hardware-ci:2.4.0 .
+docker build -t ghcr.io/syqnal/hardware-ci:2.5.0 .
 ```
 
 Build with GF180 included:
@@ -66,14 +66,14 @@ Build with GF180 included:
 ```bash
 docker build \
   --build-arg INSTALL_GF180=true \
-  -t ghcr.io/syqnal/hardware-ci:2.4.0-gf180 .
+  -t ghcr.io/syqnal/hardware-ci:2.5.0-gf180 .
 ```
 
 Publish from GitHub:
 
 1. Push changes to `main`.
 2. Run **Publish hardware-ci image** from the Actions tab, or push a version tag.
-3. Confirm `ghcr.io/syqnal/hardware-ci:2.4.0` exists before moving/updating the `v2` action tag.
+3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.0` exists before moving/updating the `v2` action tag.
 
 Run against a local hardware project:
 
@@ -84,7 +84,7 @@ scripts/run-local-docker.sh /path/to/project
 To force a local image:
 
 ```bash
-SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.4.0 \
+SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.0 \
   scripts/run-local-docker.sh /path/to/project
 ```
 

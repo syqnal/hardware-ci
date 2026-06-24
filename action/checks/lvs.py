@@ -40,8 +40,11 @@ def parse_lvs_report(text: str) -> tuple[dict, bool, list[dict]]:
     """
     summary: dict = {
         "device_mismatches": 0,
+        "deviceMismatches": 0,
         "net_mismatches": 0,
+        "netMismatches": 0,
         "property_errors": 0,
+        "propertyErrors": 0,
         "result": None,
     }
     violations: list[dict] = []
@@ -56,12 +59,15 @@ def parse_lvs_report(text: str) -> tuple[dict, bool, list[dict]]:
     m = _DEVICE_MISMATCH_RE.search(text)
     if m:
         summary["device_mismatches"] = int(m.group(1))
+        summary["deviceMismatches"] = summary["device_mismatches"]
     m = _NET_MISMATCH_RE.search(text)
     if m:
         summary["net_mismatches"] = int(m.group(1))
+        summary["netMismatches"] = summary["net_mismatches"]
     m = _PROPERTY_ERROR_RE.search(text)
     if m:
         summary["property_errors"] = int(m.group(1))
+        summary["propertyErrors"] = summary["property_errors"]
 
     total = summary["device_mismatches"] + summary["net_mismatches"] + summary["property_errors"]
     passed = total == 0 and summary["result"] != "mismatch"

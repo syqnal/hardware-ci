@@ -36,6 +36,10 @@ def _parse_synthesis(run_dir: Path) -> dict | None:
     if m: summary["estimated_area_um2"] = float(m.group(1))
     m = re.search(r"Design\s+(\S+)", text)
     if m: summary["top_module"] = m.group(1)
+    summary["topModule"] = summary.get("top_module")
+    summary["cellCount"] = summary.get("cell_count")
+    summary["flopCount"] = summary.get("flop_count")
+    summary["estimatedAreaUm2"] = summary.get("estimated_area_um2")
     return summary
 
 
@@ -68,6 +72,9 @@ def _parse_pnr(run_dir: Path) -> tuple[dict, int]:
             break
 
     drc_count = summary.get("routing_drc_violations") or 0
+    summary["routingDrcViolations"] = summary.get("routing_drc_violations")
+    summary["utilizationPct"] = summary.get("utilization_pct")
+    summary["wireLengthUm"] = summary.get("wire_length_um")
     return summary, len(violations), violations
 
 
@@ -98,6 +105,10 @@ def _parse_sta(run_dir: Path) -> tuple[dict, bool]:
     if wns is not None and wns < 0:
         passed = False
 
+    summary["wnsNs"] = summary.get("wns_ns")
+    summary["tnsNs"] = summary.get("tns_ns")
+    summary["failingEndpoints"] = summary.get("failing_endpoints")
+    summary["criticalPathNs"] = summary.get("critical_path_ns")
     return summary, passed
 
 
@@ -117,6 +128,7 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
         if m:
             count = int(m.group(1))
             summary["drc_violations"] = count
+            summary["drcViolations"] = count
             summary["tool"] = "klayout"
             for line in text.splitlines():
                 if re.search(r"violation|error", line, re.IGNORECASE):
@@ -132,9 +144,11 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
         text = magic_rpts[0].read_text(errors="replace")
         count = len(re.findall(r"^\[ERROR\]", text, re.MULTILINE))
         summary["drc_violations"] = count
+        summary["drcViolations"] = count
         summary["tool"] = "magic"
         return summary, count, []
 
+    summary["drcViolations"] = summary.get("drc_violations")
     return summary, 0, []
 
 
@@ -173,6 +187,10 @@ def _parse_power(run_dir: Path) -> dict | None:
         "leakage_power_mw":   to_mw(m.group(3)),
         "total_power_mw":     to_mw(m.group(4)),
     }
+    summary["internalPowerMw"] = summary["internal_power_mw"]
+    summary["switchingPowerMw"] = summary["switching_power_mw"]
+    summary["leakagePowerMw"] = summary["leakage_power_mw"]
+    summary["totalPowerMw"] = summary["total_power_mw"]
     return summary
 
 
@@ -203,11 +221,15 @@ def _parse_gdsii(run_dir: Path, config_dir: Path) -> tuple[dict, bool]:
     summary = {
         **summary,
         "gds_produced": True,
+        "gdsProduced": True,
         "gds_path": str(gds.relative_to(config_dir) if gds.is_relative_to(config_dir) else gds.name),
+        "gdsPath": str(gds.relative_to(config_dir) if gds.is_relative_to(config_dir) else gds.name),
         "gds_size_bytes": size_bytes,
+        "gdsSizeBytes": size_bytes,
     }
     if violations:
         summary["layout_preview_error"] = violations[0].get("plain_text")
+        summary["layoutPreviewError"] = violations[0].get("plain_text")
     return summary, size_bytes > 0 and status == "PASS"
 
 
@@ -292,6 +314,8 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         synth_summary.setdefault("wire_count", None)
         synth_summary.setdefault("lut_utilization", None)
         synth_summary["pdk"] = pdk
+        synth_summary["openlaneConfig"] = str(config_file)
+        synth_summary["openlaneRunDir"] = str(run_dir.relative_to(config_dir) if run_dir.is_relative_to(config_dir) else run_dir)
     results.append(check_obj(
         "SYNTHESIS", config_file, "openlane", version,
         status=synth_status,
