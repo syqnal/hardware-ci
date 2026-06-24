@@ -19,7 +19,7 @@ inputs:
     required: false
     default: "false"
   run_rtl_sim:
-    description: "Run Icarus Verilog testbench simulation"
+    description: "Run HDL testbench simulation: Icarus for Verilog/SystemVerilog, GHDL for VHDL"
     required: false
     default: "false"
   run_spice:

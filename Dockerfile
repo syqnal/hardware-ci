@@ -27,6 +27,7 @@ RUN apt-get update && \
       kicad \
       verilator \
       iverilog \
+      ghdl \
       ngspice \
       python3 \
       python3-pip \

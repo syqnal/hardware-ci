@@ -15,6 +15,7 @@ REQUIRED_COMMANDS = [
     ("verilator", ["verilator", "--version"]),
     ("iverilog", ["iverilog", "-V"]),
     ("vvp", ["vvp", "-V"]),
+    ("ghdl", ["ghdl", "--version"]),
     ("ngspice", ["ngspice", "--version"]),
     ("yosys", ["yosys", "--version"]),
     ("sby", ["sby", "--version"]),

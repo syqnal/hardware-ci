@@ -14,10 +14,12 @@ _ASSERT_FAIL_RE = re.compile(r"(?i)\b(FAIL|FAILED|ASSERT\s+FAILED?|ERROR)\b")
 _SIM_TIME_RE = re.compile(r"(\d+)\s*ns", re.IGNORECASE)
 _DUMPFILE_RE = re.compile(r'\$dumpfile\s*\(\s*"([^"]+)"', re.IGNORECASE)
 _VCD_VAR_RE = re.compile(r"^\$var\b", re.MULTILINE)
+_MODULE_RE = re.compile(r"\bmodule\s+([A-Za-z_][A-Za-z0-9_$]*)", re.IGNORECASE)
 
 _VCD_MAX_BYTES = 500_000  # skip inline encoding above 500 KB
 _TB_DIR_NAMES = {"sim", "sims", "simulation", "simulations", "test", "tests", "tb", "testbench", "testbenches"}
-_HDL_SUFFIXES = {".v", ".sv"}
+_HDL_SUFFIXES = {".v", ".sv", ".vh", ".svh"}
+_COMPILE_SUFFIXES = {".v", ".sv"}
 
 
 def _iverilog_version() -> str | None:
@@ -110,6 +112,10 @@ def _hdl_files(root: Path) -> list[Path]:
     return sorted(set(files))
 
 
+def _compile_hdl_files(root: Path) -> list[Path]:
+    return [f for f in _hdl_files(root) if f.suffix.lower() in _COMPILE_SUFFIXES]
+
+
 def _source_root_for_testbench(tb_file: Path) -> Path:
     """Pick the smallest useful RTL root for a testbench.
 
@@ -122,7 +128,7 @@ def _source_root_for_testbench(tb_file: Path) -> Path:
     current = tb_abs.parent
 
     while True:
-        hdl = _hdl_files(current)
+        hdl = _compile_hdl_files(current)
         non_tb = [f for f in hdl if f.resolve() != tb_abs and not _is_testbench_path(_safe_relative_to(f, root))]
         if non_tb:
             return current
@@ -135,7 +141,7 @@ def _sources_for_testbench(tb_file: Path) -> list[str]:
     root = _repo_root()
     source_root = _source_root_for_testbench(tb_file)
     tb_abs = tb_file.resolve()
-    hdl = _hdl_files(source_root)
+    hdl = _compile_hdl_files(source_root)
 
     design_sources = [
         f for f in hdl
@@ -155,7 +161,7 @@ def design_sources_for(path: Path) -> list[str]:
     root = _repo_root()
     current = path.resolve().parent
     while True:
-        hdl = _hdl_files(current)
+        hdl = _compile_hdl_files(current)
         design_sources = [
             f for f in hdl
             if not _is_testbench_path(_safe_relative_to(f, root))
@@ -167,6 +173,76 @@ def design_sources_for(path: Path) -> list[str]:
         current = current.parent
 
 
+def _include_dirs_for_sources(sources: list[str]) -> list[str]:
+    dirs = {str(Path("."))}
+    for src in sources:
+        parent = Path(src).parent
+        dirs.add(str(parent if str(parent) else Path(".")))
+    return sorted(dirs)
+
+
+def _module_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return None
+    m = _MODULE_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _hdl_summary(
+    *,
+    tool_version: str | None,
+    language: str,
+    standard: str,
+    top_module: str | None,
+    testbench_path: Path,
+    design_files: list[str],
+    include_paths: list[str],
+    command_sequence: list[str],
+    assertions_passed: int = 0,
+    assertions_failed: int = 0,
+    compile_log: str = "",
+    sim_log: str = "",
+    vcd_b64: str | None = None,
+    signal_count: int | None = None,
+    sim_time_ns: int | None = None,
+    source_count: int = 0,
+    error_type: str | None = None,
+    error_detail: str | None = None,
+) -> dict:
+    return {
+        "tool": "icarus",
+        "toolVersion": tool_version,
+        "language": language,
+        "standard": standard,
+        "topModule": top_module,
+        "testbenchPath": str(testbench_path),
+        "designFiles": design_files,
+        "includePaths": include_paths,
+        "commandSequence": command_sequence,
+        "assertionsPassed": assertions_passed,
+        "assertionsFailed": assertions_failed,
+        "compileLog": compile_log[:4000],
+        "simLog": sim_log[:4000],
+        "vcdArtifactUrl": None,
+        "vcdB64": vcd_b64,
+        "signalCount": signal_count,
+        "simTimeNs": sim_time_ns,
+        "runner": "github_actions",
+        "sourceCount": source_count,
+        "errorType": error_type,
+        "errorDetail": error_detail,
+        # Legacy keys are kept until every Syqnal surface reads the new contract.
+        "assertions_passed": assertions_passed,
+        "assertions_failed": assertions_failed,
+        "sim_time_ns": sim_time_ns,
+        "source_count": source_count,
+        "vcd_b64": vcd_b64,
+        "signal_count": signal_count,
+    }
+
+
 def run_rtl_sim(tb_file: Path) -> dict:
     version = _iverilog_version()
 
@@ -174,10 +250,17 @@ def run_rtl_sim(tb_file: Path) -> dict:
         vvp_path = Path(tmp.name)
 
     sources = _sources_for_testbench(tb_file)
+    design_files = [s for s in sources if s != str(tb_file) and not _is_testbench_path(Path(s))]
+    include_dirs = _include_dirs_for_sources(sources)
+    include_args = [arg for d in include_dirs for arg in ("-I", d)]
+    language = "systemverilog" if any(Path(s).suffix.lower() == ".sv" for s in sources) else "verilog"
+    standard = "2012" if language == "systemverilog" else "2005-sv"
+    standard_flag = "-g2012" if language == "systemverilog" else "-g2005-sv"
+    top_module = _module_name(tb_file)
 
-    compile_rc, _, compile_err, compile_ms = run_tool([
-        "iverilog", "-g2012", "-o", str(vvp_path), *sources
-    ])
+    compile_cmd = ["iverilog", standard_flag, *include_args, "-o", str(vvp_path), *sources]
+    compile_rc, compile_out, compile_err, compile_ms = run_tool(compile_cmd)
+    compile_log = (compile_out + compile_err).strip()
 
     if compile_rc != 0:
         vvp_path.unlink(missing_ok=True)
@@ -185,10 +268,25 @@ def run_rtl_sim(tb_file: Path) -> dict:
             "RTL_SIM", tb_file, "iverilog", version,
             status="ERROR", duration_ms=compile_ms,
             violations=[{"type": "compile_error", "severity": "error",
-                         "plain_text": compile_err.strip()[:500]}],
+                         "plain_text": compile_log[:500]}],
+            summary=_hdl_summary(
+                tool_version=version,
+                language=language,
+                standard=standard,
+                top_module=top_module,
+                testbench_path=tb_file,
+                design_files=design_files,
+                include_paths=include_dirs,
+                command_sequence=[" ".join(compile_cmd)],
+                compile_log=compile_log,
+                source_count=len(sources),
+                error_type="compile_error",
+                error_detail=compile_log[:500],
+            ),
         )
 
-    run_rc, sim_out, sim_err, sim_ms = run_tool(["vvp", str(vvp_path)], timeout=60)
+    sim_cmd = ["vvp", str(vvp_path)]
+    run_rc, sim_out, sim_err, sim_ms = run_tool(sim_cmd, timeout=60)
     vvp_path.unlink(missing_ok=True)
 
     combined = sim_out + sim_err
@@ -219,15 +317,27 @@ def run_rtl_sim(tb_file: Path) -> dict:
     if vcd_path:
         vcd_b64, signal_count = _encode_vcd(vcd_path)
 
-    summary: dict = {
-        "assertions_passed": assertions_passed,
-        "assertions_failed": assertions_failed,
-        "sim_time_ns": sim_time_ns,
-        "source_count": len(sources),
-    }
-    if vcd_b64 is not None:
-        summary["vcd_b64"] = vcd_b64
-        summary["signal_count"] = signal_count
+    error_type = "simulation_crash" if run_rc != 0 else None
+    summary = _hdl_summary(
+        tool_version=version,
+        language=language,
+        standard=standard,
+        top_module=top_module,
+        testbench_path=tb_file,
+        design_files=design_files,
+        include_paths=include_dirs,
+        command_sequence=[" ".join(compile_cmd), " ".join(sim_cmd)],
+        assertions_passed=assertions_passed,
+        assertions_failed=assertions_failed,
+        compile_log=compile_log,
+        sim_log=combined,
+        vcd_b64=vcd_b64,
+        signal_count=signal_count,
+        sim_time_ns=sim_time_ns,
+        source_count=len(sources),
+        error_type=error_type,
+        error_detail=combined.strip()[:500] if error_type else None,
+    )
 
     return check_obj(
         "RTL_SIM", tb_file, "iverilog", version,

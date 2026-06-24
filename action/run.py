@@ -16,6 +16,7 @@ from checks.drc import run_drc
 from checks.erc import run_erc
 from checks.rtl_lint import run_rtl_lint
 from checks.rtl_sim import run_rtl_sim, is_testbench_path
+from checks.vhdl_sim import run_vhdl_sim, is_vhdl_testbench_path
 from checks.spice import run_spice
 from checks.bom import run_bom
 from checks.step import run_step
@@ -26,7 +27,7 @@ from checks.gdsii import run_gdsii
 from checks.lvs import run_lvs
 from checks.openlane_flow import run_openlane_flow
 
-ACTION_VERSION = "2.3.6"
+ACTION_VERSION = "2.4.0"
 
 
 def env(key: str) -> bool:
@@ -60,6 +61,9 @@ def main() -> None:
         for f in find("*.v") + find("*.sv"):
             if _is_testbench(f):
                 checks.append(run_rtl_sim(f))
+        for f in find("*.vhd") + find("*.vhdl"):
+            if is_vhdl_testbench_path(f):
+                checks.append(run_vhdl_sim(f))
 
     if env("INPUT_RUN_SPICE"):
         for f in find("*.cir") + find("*.sp") + find("*.asc"):

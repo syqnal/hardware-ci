@@ -11,7 +11,7 @@ proof-of-work results on project pages.
 | `run_drc` | kicad-cli | PCB design rule check |
 | `run_erc` | kicad-cli | Schematic electrical rule check |
 | `run_rtl_lint` | Verilator | Verilog/SV lint |
-| `run_rtl_sim` | Icarus Verilog + vvp | Testbench simulation |
+| `run_rtl_sim` | Icarus Verilog + vvp, GHDL | HDL testbench simulation |
 | `run_spice` | ngspice | SPICE convergence + error check |
 | `run_bom` | built-in CSV parser | BOM column validation |
 | `run_step` | FreeCAD CLI / header check | STEP geometry validation |
@@ -37,7 +37,7 @@ bounding box, and file size metadata.
 The GitHub Action uses the prebuilt container image:
 
 ```text
-ghcr.io/syqnal/hardware-ci:2.3.0
+ghcr.io/syqnal/hardware-ci:2.4.0
 ```
 
 The image is intentionally heavy: it contains the hardware and IC toolchain plus
@@ -49,7 +49,7 @@ Included toolchain:
 | Domain | Tools |
 |---|---|
 | PCB | KiCad CLI |
-| RTL | Icarus Verilog, Verilator, Yosys, SymbiYosys |
+| RTL/HDL | Icarus Verilog, GHDL, Verilator, Yosys, SymbiYosys |
 | SPICE | ngspice |
 | IC physical design | OpenLane, OpenROAD, OpenSTA |
 | IC signoff/viewing | KLayout, Magic, Netgen |
@@ -58,7 +58,7 @@ Included toolchain:
 Build locally:
 
 ```bash
-docker build -t ghcr.io/syqnal/hardware-ci:2.3.0 .
+docker build -t ghcr.io/syqnal/hardware-ci:2.4.0 .
 ```
 
 Build with GF180 included:
@@ -66,14 +66,14 @@ Build with GF180 included:
 ```bash
 docker build \
   --build-arg INSTALL_GF180=true \
-  -t ghcr.io/syqnal/hardware-ci:2.3.0-gf180 .
+  -t ghcr.io/syqnal/hardware-ci:2.4.0-gf180 .
 ```
 
 Publish from GitHub:
 
 1. Push changes to `main`.
 2. Run **Publish hardware-ci image** from the Actions tab, or push a version tag.
-3. Confirm `ghcr.io/syqnal/hardware-ci:2.3.0` exists before moving/updating the `v2` action tag.
+3. Confirm `ghcr.io/syqnal/hardware-ci:2.4.0` exists before moving/updating the `v2` action tag.
 
 Run against a local hardware project:
 
@@ -84,7 +84,7 @@ scripts/run-local-docker.sh /path/to/project
 To force a local image:
 
 ```bash
-SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.3.0 \
+SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.4.0 \
   scripts/run-local-docker.sh /path/to/project
 ```
 
