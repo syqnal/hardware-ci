@@ -20,27 +20,31 @@ def run_drc(pcb_file: Path) -> dict:
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         report_path = Path(tmp.name)
 
-    rc, _, stderr, duration_ms = run_tool([
+    rc, stdout, stderr, duration_ms = run_tool([
         "kicad-cli", "pcb", "drc",
         "--output", str(report_path),
         "--format", "json",
-        "--severity-all",
+        "--exit-code-violations",
         str(pcb_file),
     ])
 
-    if rc != 0 and not report_path.exists():
+    if not report_path.exists() or report_path.stat().st_size == 0:
+        message = (stderr or stdout or "kicad-cli did not produce a DRC JSON report.").strip()
         return check_obj(
             "DRC", pcb_file, "kicad-cli", version,
-            status="ERROR", duration_ms=duration_ms,
+            status="ERROR", error_count=1, duration_ms=duration_ms,
             violations=[{"type": "tool_error", "severity": "error",
-                         "plain_text": stderr.strip()[:500]}],
+                         "plain_text": message[:1000]}],
         )
 
     try:
         report = json.loads(report_path.read_text())
-    except Exception:
+    except Exception as exc:
+        message = (stderr or stdout or f"Could not parse DRC JSON report: {exc}").strip()
         return check_obj("DRC", pcb_file, "kicad-cli", version,
-                         status="ERROR", duration_ms=duration_ms)
+                         status="ERROR", error_count=1, duration_ms=duration_ms,
+                         violations=[{"type": "parse_error", "severity": "error",
+                                      "plain_text": message[:1000]}])
     finally:
         report_path.unlink(missing_ok=True)
 
@@ -48,7 +52,7 @@ def run_drc(pcb_file: Path) -> dict:
     error_count = 0
     warning_count = 0
 
-    for item in report.get("violations", []):
+    for item in [*report.get("violations", []), *report.get("unconnected_items", [])]:
         sev = item.get("severity", "error").lower()
         if sev == "error":
             error_count += 1

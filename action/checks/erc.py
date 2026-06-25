@@ -18,27 +18,31 @@ def run_erc(sch_file: Path) -> dict:
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         report_path = Path(tmp.name)
 
-    rc, _, stderr, duration_ms = run_tool([
+    rc, stdout, stderr, duration_ms = run_tool([
         "kicad-cli", "sch", "erc",
         "--output", str(report_path),
         "--format", "json",
-        "--severity-all",
+        "--exit-code-violations",
         str(sch_file),
     ])
 
-    if rc != 0 and not report_path.exists():
+    if not report_path.exists() or report_path.stat().st_size == 0:
+        message = (stderr or stdout or "kicad-cli did not produce an ERC JSON report.").strip()
         return check_obj(
             "ERC", sch_file, "kicad-cli", version,
-            status="ERROR", duration_ms=duration_ms,
+            status="ERROR", error_count=1, duration_ms=duration_ms,
             violations=[{"type": "tool_error", "severity": "error",
-                         "plain_text": stderr.strip()[:500]}],
+                         "plain_text": message[:1000]}],
         )
 
     try:
         report = json.loads(report_path.read_text())
-    except Exception:
+    except Exception as exc:
+        message = (stderr or stdout or f"Could not parse ERC JSON report: {exc}").strip()
         return check_obj("ERC", sch_file, "kicad-cli", version,
-                         status="ERROR", duration_ms=duration_ms)
+                         status="ERROR", error_count=1, duration_ms=duration_ms,
+                         violations=[{"type": "parse_error", "severity": "error",
+                                      "plain_text": message[:1000]}])
     finally:
         report_path.unlink(missing_ok=True)
 
