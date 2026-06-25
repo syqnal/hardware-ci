@@ -1,0 +1,169 @@
+name: Syqnal Hardware Worker
+
+on:
+  repository_dispatch:
+    types: [trigger-audit]
+
+permissions:
+  contents: read
+
+jobs:
+  hardware-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Decode payload
+        id: payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/syqnal-payload.json <<'JSON'
+          ${{ toJson(github.event.client_payload) }}
+          JSON
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/syqnal-payload.json").read_text())
+          repo_url = str(payload.get("repo_url") or "").rstrip("/")
+          if repo_url.endswith(".git"):
+              repo_url = repo_url[:-4]
+          prefix = "https://github.com/"
+          repo = repo_url[len(prefix):] if repo_url.startswith(prefix) else repo_url
+          if "/" not in repo:
+              raise SystemExit(f"Invalid repo_url: {repo_url}")
+          runs = payload.get("runs") or []
+          types = {str(run.get("type") or "").upper() for run in runs}
+          print(f"repo={repo}")
+          print(f"branch={payload.get('branch') or 'main'}")
+          print(f"project_slug={payload.get('project_slug') or ''}")
+          for name, enabled in {
+              "run_drc": "DRC" in types,
+              "run_erc": "ERC" in types,
+              "run_rtl_lint": "RTL_LINT" in types,
+              "run_rtl_sim": "RTL_SIM" in types,
+              "run_spice": "SPICE_SIM" in types,
+              "run_bom": "BOM_PARSE" in types,
+              "run_step": "STEP_VALID" in types,
+              "run_gerber": "GERBER" in types,
+              "run_synthesis": "SYNTHESIS" in types and not {"PNR", "STA", "SILICON_DRC", "POWER", "LVS", "GDSII"} & types,
+              "run_formal": "FORMAL" in types,
+              "run_gdsii": "GDSII" in types and not {"PNR", "STA", "SILICON_DRC", "POWER", "LVS"} & types,
+              "run_lvs": "LVS" in types and not {"PNR", "STA", "SILICON_DRC", "POWER"} & types,
+              "run_openlane": bool({"SYNTHESIS", "PNR", "STA", "SILICON_DRC", "POWER", "LVS", "GDSII"} & types),
+          }.items():
+              print(f"{name}={'true' if enabled else 'false'}")
+          PY
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.payload.outputs.repo }}
+          ref: ${{ steps.payload.outputs.branch }}
+          token: ${{ secrets.SYQNAL_TARGET_REPO_TOKEN || github.token }}
+
+      - name: Run Syqnal Hardware CI
+        uses: syqnal/hardware-ci@v2.5.0
+        with:
+          syqnal_project_slug: ${{ steps.payload.outputs.project_slug }}
+          run_drc: ${{ steps.payload.outputs.run_drc }}
+          run_erc: ${{ steps.payload.outputs.run_erc }}
+          run_rtl_lint: ${{ steps.payload.outputs.run_rtl_lint }}
+          run_rtl_sim: ${{ steps.payload.outputs.run_rtl_sim }}
+          run_spice: ${{ steps.payload.outputs.run_spice }}
+          run_bom: ${{ steps.payload.outputs.run_bom }}
+          run_step: ${{ steps.payload.outputs.run_step }}
+          run_gerber: ${{ steps.payload.outputs.run_gerber }}
+          run_synthesis: ${{ steps.payload.outputs.run_synthesis }}
+          run_formal: ${{ steps.payload.outputs.run_formal }}
+          run_gdsii: ${{ steps.payload.outputs.run_gdsii }}
+          run_lvs: ${{ steps.payload.outputs.run_lvs }}
+          run_openlane: ${{ steps.payload.outputs.run_openlane }}
+
+      - name: Map results to Syqnal run ids
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/syqnal-payload.json").read_text())
+          requested = payload.get("runs") or []
+          artifact_path = Path("syqnal-verification.json")
+          artifact = json.loads(artifact_path.read_text()) if artifact_path.exists() else {"checks": []}
+          checks = artifact.get("checks") or []
+
+          by_type = {}
+          for run in requested:
+              by_type.setdefault(str(run.get("type") or "").upper(), []).append(run)
+
+          used = set()
+          mapped = []
+          for check in checks:
+              check_type = str(check.get("type") or "").upper()
+              candidates = by_type.get(check_type, [])
+              run = next((candidate for candidate in candidates if id(candidate) not in used), None)
+              if not run:
+                  continue
+              used.add(id(run))
+              mapped.append({
+                  "run_id": run.get("run_id"),
+                  "type": check_type,
+                  "file_path": check.get("file") or run.get("file_path") or "",
+                  "status": check.get("status") or "ERROR",
+                  "tool": check.get("tool"),
+                  "tool_version": check.get("tool_version"),
+                  "error_count": check.get("error_count", 0),
+                  "warning_count": check.get("warning_count", 0),
+                  "duration_ms": check.get("duration_ms"),
+                  "violations": check.get("violations") or [],
+                  "summary": check.get("summary") or {},
+                  "logs": json.dumps(check, indent=2)[:10000],
+              })
+
+          mapped_ids = {item.get("run_id") for item in mapped}
+          for run in requested:
+              if run.get("run_id") in mapped_ids:
+                  continue
+              mapped.append({
+                  "run_id": run.get("run_id"),
+                  "type": str(run.get("type") or "").upper(),
+                  "file_path": run.get("file_path") or "",
+                  "status": "ERROR",
+                  "error_count": 1,
+                  "warning_count": 0,
+                  "violations": [{
+                      "type": "missing_result",
+                      "severity": "error",
+                      "plain_text": "hardware-ci did not emit a result for this requested check.",
+                      "items": [],
+                  }],
+                  "logs": json.dumps(artifact, indent=2)[:10000],
+              })
+
+          Path("/tmp/syqnal-results.json").write_text(json.dumps({"runs": mapped}, indent=2))
+          PY
+
+      - name: Report results to Syqnal
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/syqnal-payload.json").read_text())
+          data = Path("/tmp/syqnal-results.json").read_bytes()
+          request = urllib.request.Request(
+              payload["callback_url"],
+              data=data,
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {payload['callback_token']}",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              print(response.read().decode("utf-8", errors="replace"))
+          PY
