@@ -18,6 +18,46 @@ from .lvs import run_lvs_from_report, _netgen_version
 
 
 _SUPPORTED_PDKS = {"sky130a", "sky130b", "sky130", "gf180mcu"}
+_OPENLANE_ERROR_RE = re.compile(
+    r"(error|exception|traceback|failed|fatal|yosys|synthesis)",
+    re.IGNORECASE,
+)
+
+
+def _tail_lines(text: str, limit: int = 80) -> str:
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    return "\n".join(lines[-limit:])[:6000]
+
+
+def _openlane_log_excerpt(run_dir: Path | None, combined_output: str) -> str:
+    """Return a compact log excerpt that explains why OpenLane stopped."""
+    candidates: list[Path] = []
+    if run_dir is not None:
+        candidates = sorted(
+            [
+                path for path in run_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".log", ".txt", ".rpt"}
+            ],
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    for path in candidates[:50]:
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if _OPENLANE_ERROR_RE.search(text):
+            excerpt = _tail_lines(text)
+            if excerpt:
+                return f"{path.name}\n{excerpt}"
+    return _tail_lines(combined_output)
+
+
+def _missing_stage_violation(stage: str, excerpt: str) -> list[dict]:
+    message = f"OpenLane did not produce a {stage} report."
+    if excerpt:
+        message = f"{message}\n\nLog excerpt:\n{excerpt}"
+    return [{"type": "missing_openlane_report", "severity": "error", "plain_text": message[:5000]}]
 
 # ── Report parsers ─────────────────────────────────────────────────────────────
 
@@ -304,6 +344,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
             violations=[{"type": "flow_error", "severity": "error", "plain_text": error_msg}],
         )]
 
+    flow_excerpt = _openlane_log_excerpt(run_dir, combined)
     results: list[dict] = []
 
     # 1 — SYNTHESIS
@@ -316,11 +357,20 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         synth_summary["pdk"] = pdk
         synth_summary["openlaneConfig"] = str(config_file)
         synth_summary["openlaneRunDir"] = str(run_dir.relative_to(config_dir) if run_dir.is_relative_to(config_dir) else run_dir)
+    else:
+        synth_summary = {
+            "pdk": pdk,
+            "openlaneConfig": str(config_file),
+            "openlaneRunDir": str(run_dir.relative_to(config_dir) if run_dir.is_relative_to(config_dir) else run_dir),
+            "openlaneLogExcerpt": flow_excerpt,
+        }
     results.append(check_obj(
         "SYNTHESIS", config_file, "openlane", version,
         status=synth_status,
         duration_ms=ms,
-        summary=synth_summary or {},
+        error_count=0 if synth_status == "PASS" else 1,
+        violations=None if synth_status == "PASS" else _missing_stage_violation("synthesis", flow_excerpt),
+        summary=synth_summary,
     ))
 
     # 2 — PNR (Place & Route)
@@ -331,9 +381,11 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     results.append(check_obj(
         "PNR", config_file, "openroad", version,
         status=pnr_status,
-        error_count=pnr_viol_count,
+        error_count=pnr_viol_count if pnr_status != "ERROR" else 1,
         duration_ms=ms,
-        violations=pnr_violations if pnr_violations else None,
+        violations=pnr_violations if pnr_violations else (
+            _missing_stage_violation("place-and-route", flow_excerpt) if pnr_status == "ERROR" else None
+        ),
         summary=pnr_summary,
     ))
 
@@ -345,7 +397,9 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     results.append(check_obj(
         "STA", config_file, "opensta", version,
         status=sta_status,
+        error_count=1 if sta_status == "ERROR" else 0,
         duration_ms=ms,
+        violations=_missing_stage_violation("timing", flow_excerpt) if sta_status == "ERROR" else None,
         summary=sta_summary,
     ))
 
@@ -357,9 +411,11 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     results.append(check_obj(
         "SILICON_DRC", config_file, drc_summary.get("tool") or "klayout", version,
         status=drc_status,
-        error_count=drc_count,
+        error_count=drc_count if drc_status != "ERROR" else 1,
         duration_ms=ms,
-        violations=drc_violations if drc_violations else None,
+        violations=drc_violations if drc_violations else (
+            _missing_stage_violation("silicon DRC", flow_excerpt) if drc_status == "ERROR" else None
+        ),
         summary=drc_summary,
     ))
 
@@ -368,10 +424,11 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     results.append(check_obj(
         "GDSII", config_file, "openlane", version,
         status="PASS" if gds_ok else "FAIL",
+        error_count=0 if gds_ok else 1,
         duration_ms=ms,
         violations=None if gds_ok else [{"type": "no_gds", "severity": "error",
-                                          "plain_text": "OpenLane flow did not produce a final GDS"}],
-        summary=gds_summary,
+                                          "plain_text": f"OpenLane flow did not produce a final GDS.\n\nLog excerpt:\n{flow_excerpt}"[:5000]}],
+        summary={**gds_summary, "openlaneLogExcerpt": flow_excerpt} if not gds_ok else gds_summary,
     ))
 
     # 6 — POWER (OpenROAD report_power, only if report exists)
