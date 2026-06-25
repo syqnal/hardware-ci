@@ -37,7 +37,7 @@ panel alongside top cell, layer count, bounding box, and file size metadata.
 The GitHub Action uses the prebuilt container image:
 
 ```text
-ghcr.io/syqnal/hardware-ci:2.5.0
+ghcr.io/syqnal/hardware-ci:2.5.3
 ```
 
 The image is intentionally heavy: it contains the hardware and IC toolchain plus
@@ -58,7 +58,7 @@ Included toolchain:
 Build locally:
 
 ```bash
-docker build -t ghcr.io/syqnal/hardware-ci:2.5.0 .
+docker build -t ghcr.io/syqnal/hardware-ci:2.5.3 .
 ```
 
 Build with GF180 included:
@@ -66,14 +66,14 @@ Build with GF180 included:
 ```bash
 docker build \
   --build-arg INSTALL_GF180=true \
-  -t ghcr.io/syqnal/hardware-ci:2.5.0-gf180 .
+  -t ghcr.io/syqnal/hardware-ci:2.5.3-gf180 .
 ```
 
 Publish from GitHub:
 
 1. Push changes to `main`.
 2. Run **Publish hardware-ci image** from the Actions tab, or push a version tag.
-3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.0` exists before moving/updating the `v2` action tag.
+3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.3` exists before moving/updating the `v2` action tag.
 
 Run against a local hardware project:
 
@@ -84,7 +84,7 @@ scripts/run-local-docker.sh /path/to/project
 To force a local image:
 
 ```bash
-SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.0 \
+SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.3 \
   scripts/run-local-docker.sh /path/to/project
 ```
 
@@ -102,5 +102,5 @@ default PDK is missing, the build fails loudly.
 
 ## Docker image
 
-Built on Ubuntu 22.04. KiCad CLI from the official KiCad 8 PPA.
+Built on Ubuntu 24.04. KiCad CLI from the official KiCad dev nightly PPA.
 Yosys from OSS CAD Suite nightly (0.38+) for JSON stat output.

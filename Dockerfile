@@ -1,14 +1,16 @@
 # syntax=docker/dockerfile:1.7
 FROM --platform=linux/amd64 hdlc/yosys:latest AS yosys_tools
 
-FROM ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:24.04
 
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# KiCad 8 headless CLI + baseline EDA/runtime tools.
+# KiCad nightly CLI + baseline EDA/runtime tools.
+# TensorRail and other current projects may be saved by KiCad 10 dev builds
+# using file format 20260206+, which KiCad 8/9 cannot open.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -21,10 +23,10 @@ RUN apt-get update && \
       tar \
       unzip \
       xz-utils && \
-    add-apt-repository ppa:kicad/kicad-8.0-releases && \
+    add-apt-repository ppa:kicad/kicad-dev-nightly && \
     apt-get update && \
     apt-get -o Dpkg::Options::="--force-overwrite" install -y --no-install-recommends \
-      kicad \
+      kicad-nightly \
       verilator \
       iverilog \
       ghdl \
@@ -37,16 +39,21 @@ RUN apt-get update && \
       netgen-lvs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -sf /usr/lib/netgen/bin/netgen /usr/local/bin/netgen
+RUN ln -sf /usr/lib/netgen/bin/netgen /usr/local/bin/netgen && \
+    if command -v kicad-cli-nightly >/dev/null 2>&1; then ln -sf "$(command -v kicad-cli-nightly)" /usr/local/bin/kicad-cli; fi && \
+    if command -v kicad-nightly >/dev/null 2>&1; then ln -sf "$(command -v kicad-nightly)" /usr/local/bin/kicad; fi && \
+    kicad-cli version
 
-# OpenROAD is not packaged in Ubuntu 22.04. Use the OpenROAD Flow Scripts
-# documented prebuilt package for Ubuntu 22.04 so OpenLane signoff can run.
+# OpenROAD is not packaged in Ubuntu. Use the OpenROAD Flow Scripts
+# documented prebuilt package so OpenLane signoff can run.
 ARG OPENROAD_DEB_URL=https://github.com/Precision-Innovations/OpenROAD/releases/download/2024-12-14/openroad_2.0-17598-ga008522d8_amd64-ubuntu-22.04.deb
 RUN if [[ "$(dpkg --print-architecture)" != "amd64" ]]; then \
       echo "OpenROAD prebuilt package is only available for linux/amd64 in this runner image" >&2; \
       exit 1; \
     fi && \
+    add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
+    apt-get install -y --no-install-recommends libpython3.10 python3.10-minimal && \
     curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 1800 \
       "${OPENROAD_DEB_URL}" -o /tmp/openroad.deb && \
     apt-get -o Dpkg::Options::="--force-overwrite" install -y --no-install-recommends /tmp/openroad.deb && \
@@ -69,9 +76,9 @@ RUN git clone --depth 1 --branch "${SBY_REF}" https://github.com/YosysHQ/sby.git
 # OpenLane2 orchestrates OpenROAD/OpenSTA and volare manages open PDKs.
 ARG OPENLANE_VERSION=
 RUN if [[ -n "${OPENLANE_VERSION}" ]]; then \
-      pip3 install --no-cache-dir "openlane==${OPENLANE_VERSION}" volare lxml; \
+      pip3 install --break-system-packages --no-cache-dir "openlane==${OPENLANE_VERSION}" volare lxml; \
     else \
-      pip3 install --no-cache-dir openlane volare lxml; \
+      pip3 install --break-system-packages --no-cache-dir openlane volare lxml; \
     fi
 
 # Build the image with the PDK available so CI runs do not fetch process data.

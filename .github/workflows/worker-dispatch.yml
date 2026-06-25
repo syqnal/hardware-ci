@@ -62,7 +62,7 @@ jobs:
           token: ${{ secrets.SYQNAL_TARGET_REPO_TOKEN || github.token }}
 
       - name: Run Syqnal Hardware CI
-        uses: syqnal/hardware-ci@v2.5.0
+        uses: syqnal/hardware-ci@v2.5.3
         with:
           syqnal_project_slug: ${{ steps.payload.outputs.project_slug }}
           run_drc: ${{ steps.payload.outputs.run_drc }}
