@@ -27,10 +27,10 @@ def run_tool(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tup
 
 
 def repo_rel(path: Path) -> str:
-    """Return path relative to CWD (the repo root in CI)."""
+    """Return path relative to CWD (the repo root in CI), even for absolute paths tools print."""
     try:
-        return str(path.relative_to(Path(".")))
-    except ValueError:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except (ValueError, OSError):
         return str(path)
 
 

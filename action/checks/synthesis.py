@@ -18,9 +18,22 @@ def _yosys_version() -> str | None:
     return m.group(1) if m else None
 
 
+_MODULE_RE = re.compile(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_$]*)", re.MULTILINE)
+
+
 def _infer_top_module(v_file: Path) -> str:
-    """Use filename as the top module name — reasonable convention."""
-    return v_file.stem
+    """The module this file defines: the one named after the file if there is
+    one (top.v → top), otherwise the first module in it (top.v → tensorrail_top)."""
+    try:
+        text = v_file.read_text(errors="replace")
+    except OSError:
+        return v_file.stem
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+    text = re.sub(r"//[^\n]*", " ", text)
+    names = _MODULE_RE.findall(text)
+    if v_file.stem in names:
+        return v_file.stem
+    return names[0] if names else v_file.stem
 
 
 def run_synthesis(v_file: Path) -> dict:

@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from ._base import check_obj, run_tool
+from ._base import check_obj, repo_rel, run_tool
 from .rtl_sim import design_sources_for
 
 
@@ -45,7 +45,8 @@ def run_rtl_lint(v_file: Path) -> dict:
         sev = m.group("sev").lower()  # "error" | "warning"
         code = m.group("code") or "lint"
         msg = m.group("msg").strip()
-        file_ref = m.group("file").strip()
+        # Verilator prints absolute paths (/github/workspace/rtl/x.v); report them repo-relative.
+        file_ref = repo_rel(Path(m.group("file").strip()))
         lineno = int(m.group("line"))
 
         if sev == "error":
