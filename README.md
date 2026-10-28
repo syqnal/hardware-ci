@@ -37,7 +37,7 @@ panel alongside top cell, layer count, bounding box, and file size metadata.
 The GitHub Action uses the prebuilt container image:
 
 ```text
-ghcr.io/syqnal/hardware-ci:2.5.5
+ghcr.io/syqnal/hardware-ci:2.5.6
 ```
 
 The image is intentionally heavy: it contains the hardware and IC toolchain plus
@@ -55,10 +55,29 @@ Included toolchain:
 | IC signoff/viewing | KLayout, Magic, Netgen |
 | PDK | sky130A by default; GF180 can be enabled at image build time |
 
+### Pinned tool versions
+
+Rebuilding the image must not change anyone's results, so every tool is pinned
+in the `Dockerfile`. Change a pin only in a release, and rerun a known project
+(e.g. `skillsbuffcom/tensorrail`) to compare results before moving the worker.
+
+| Tool | Version | Pinned by |
+|---|---|---|
+| Yosys | 0.66 (git 86f2ddebc) | `hdlc/yosys` image digest |
+| SymbiYosys | v0.66 | `SBY_REF` git tag |
+| OpenLane | 2.3.10 | `OPENLANE_VERSION` (pip) |
+| volare / lxml | 0.20.6 / 6.1.3 | `VOLARE_VERSION`, `LXML_VERSION` (pip) |
+| OpenROAD | v2.0-17598-ga008522d8 | `OPENROAD_DEB_URL` |
+| sky130 PDK | fa87f8f4 | `SKY130_PDK_VERSION` |
+| Verilator, Icarus, GHDL, ngspice, KLayout, Magic, Netgen | 5.020, 12.0, 4.1.0, noble, 0.28.16, 8.3.105, noble | `ubuntu:24.04` image digest (noble archive) |
+| KiCad CLI | nightly (10.99 at 2.5.6) | **not pinned**: the nightly PPA keeps only the newest build |
+
+`doctor.py` prints every tool's version during the image build.
+
 Build locally:
 
 ```bash
-docker build -t ghcr.io/syqnal/hardware-ci:2.5.5 .
+docker build -t ghcr.io/syqnal/hardware-ci:2.5.6 .
 ```
 
 Build with GF180 included:
@@ -66,14 +85,14 @@ Build with GF180 included:
 ```bash
 docker build \
   --build-arg INSTALL_GF180=true \
-  -t ghcr.io/syqnal/hardware-ci:2.5.5-gf180 .
+  -t ghcr.io/syqnal/hardware-ci:2.5.6-gf180 .
 ```
 
 Publish from GitHub:
 
 1. Push changes to `main`.
 2. Run **Publish hardware-ci image** from the Actions tab, or push a version tag.
-3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.5` exists before moving/updating the `v2` action tag.
+3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.6` exists before moving/updating the `v2` action tag.
 
 Run against a local hardware project:
 
@@ -84,7 +103,7 @@ scripts/run-local-docker.sh /path/to/project
 To force a local image:
 
 ```bash
-SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.5 \
+SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.6 \
   scripts/run-local-docker.sh /path/to/project
 ```
 

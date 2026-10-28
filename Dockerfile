@@ -1,7 +1,17 @@
 # syntax=docker/dockerfile:1.7
-FROM --platform=linux/amd64 hdlc/yosys:latest AS yosys_tools
+#
+# Tool versions are pinned so a rebuild never changes verification results:
+# a builder's PASS must not flip, and cell counts must not move, because the
+# image was rebuilt. Bump a pin deliberately, in a release, with a smoke test.
+# See "Pinned tool versions" in README.md.
 
-FROM --platform=linux/amd64 ubuntu:24.04
+# Yosys 0.66 (git 86f2ddebc). hdlc/yosys only publishes :latest, so pin the digest.
+FROM --platform=linux/amd64 hdlc/yosys:latest@sha256:4e4bce92f7555bbebd0d0b7cf196ed0ae0866652004c2cd8e1b5f6d5adb4823b AS yosys_tools
+
+# Ubuntu 24.04 (noble): Verilator 5.020, Icarus Verilog 12.0, GHDL 4.1.0,
+# ngspice, KLayout 0.28.16, Magic 8.3.105 and Netgen come from noble's archive,
+# whose versions stay fixed for the release (security fixes only).
+FROM --platform=linux/amd64 ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
 
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 
@@ -11,6 +21,9 @@ ENV TZ=UTC
 # KiCad nightly CLI + baseline EDA/runtime tools.
 # TensorRail and other current projects may be saved by KiCad 10 dev builds
 # using file format 20260206+, which KiCad 8/9 cannot open.
+# kicad-nightly is the one deliberately unpinned tool: the nightly PPA keeps
+# only the newest build, so there is no version to pin to. DRC/ERC results can
+# change with it; doctor.py logs the kicad-cli version of every image.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -68,18 +81,18 @@ COPY --from=yosys_tools /usr/lib/x86_64-linux-gnu/libffi.so.7* /usr/lib/x86_64-l
 RUN ldconfig && yosys -V && yosys-abc -c quit
 
 # SymbiYosys is a small Python/Tcl wrapper; install it separately from source.
-ARG SBY_REF=main
+# v0.66 is the SymbiYosys release matching Yosys 0.66.
+ARG SBY_REF=v0.66
 RUN git clone --depth 1 --branch "${SBY_REF}" https://github.com/YosysHQ/sby.git /tmp/sby && \
     make -C /tmp/sby install PREFIX=/usr/local && \
     rm -rf /tmp/sby
 
 # OpenLane2 orchestrates OpenROAD/OpenSTA and volare manages open PDKs.
-ARG OPENLANE_VERSION=
-RUN if [[ -n "${OPENLANE_VERSION}" ]]; then \
-      pip3 install --break-system-packages --no-cache-dir "openlane==${OPENLANE_VERSION}" volare lxml; \
-    else \
-      pip3 install --break-system-packages --no-cache-dir openlane volare lxml; \
-    fi
+ARG OPENLANE_VERSION=2.3.10
+ARG VOLARE_VERSION=0.20.6
+ARG LXML_VERSION=6.1.3
+RUN pip3 install --break-system-packages --no-cache-dir \
+      "openlane==${OPENLANE_VERSION}" "volare==${VOLARE_VERSION}" "lxml==${LXML_VERSION}"
 
 # Build the image with the PDK available so CI runs do not fetch process data.
 # The build must fail if the PDK cannot be installed.
