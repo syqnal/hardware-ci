@@ -19,6 +19,10 @@ REQUIRED_COMMANDS = [
     ("ngspice", ["ngspice", "--version"]),
     ("yosys", ["yosys", "--version"]),
     ("sby", ["sby", "--version"]),
+    # SMT solvers for sby's smtbmc engine ("smtbmc yices" is the usual default).
+    ("yices-smt2", ["yices-smt2", "--version"]),
+    ("z3", ["z3", "--version"]),
+    ("boolector", ["boolector", "--version"]),
     ("openroad", ["openroad", "-version"]),
     ("klayout", ["klayout", "-b", "-v"]),
     ("magic", ["magic", "--version"]),

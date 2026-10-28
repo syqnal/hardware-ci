@@ -50,6 +50,8 @@ RUN apt-get update && \
       klayout \
       magic \
       netgen-lvs \
+      z3 \
+      boolector \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/lib/netgen/bin/netgen /usr/local/bin/netgen && \
@@ -86,6 +88,19 @@ ARG SBY_REF=v0.66
 RUN git clone --depth 1 --branch "${SBY_REF}" https://github.com/YosysHQ/sby.git /tmp/sby && \
     make -C /tmp/sby install PREFIX=/usr/local && \
     rm -rf /tmp/sby
+
+# Yices 2, the solver most .sby files name ("smtbmc yices"). Not packaged in
+# noble; SRI's static release binary, pinned by checksum.
+ARG YICES_VERSION=2.7.0
+ARG YICES_SHA256=49566b6f817692820538df78fe406878400d79810631c9372b2495bc81d3e00a
+RUN curl -fL --retry 5 --retry-delay 5 \
+      "https://github.com/SRI-CSL/yices2/releases/download/yices-${YICES_VERSION}/yices-${YICES_VERSION}-x86_64-pc-linux-gnu-static-gmp.tar.gz" \
+      -o /tmp/yices.tgz && \
+    echo "${YICES_SHA256}  /tmp/yices.tgz" | sha256sum -c - && \
+    tar xzf /tmp/yices.tgz -C /tmp && \
+    install -m 0755 /tmp/yices-${YICES_VERSION}/bin/yices* /usr/local/bin/ && \
+    rm -rf /tmp/yices.tgz /tmp/yices-${YICES_VERSION} && \
+    yices-smt2 --version
 
 # OpenLane2 orchestrates OpenROAD/OpenSTA and volare manages open PDKs.
 ARG OPENLANE_VERSION=2.3.10
