@@ -5,7 +5,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from ._base import check_obj, run_tool
+from ._base import check_obj, repo_rel, run_tool
 from .rtl_sim import design_sources_for
 
 
@@ -36,6 +36,20 @@ def _infer_top_module(v_file: Path) -> str:
     return names[0] if names else v_file.stem
 
 
+_SOURCE_LOC_RE = re.compile(r"([\w./-]+\.(?:v|sv|vh|svh)):(\d+)")
+
+
+def _error_location(lines: list[str], error_index: int) -> str | None:
+    """Yosys ERROR lines often omit the source; the lines before them (e.g. the
+    process being lowered, $proc$rtl/x.v:132$5) say where it is."""
+    for line in reversed(lines[max(0, error_index - 30):error_index + 1]):
+        matches = _SOURCE_LOC_RE.findall(line)
+        if matches:
+            path, lineno = matches[-1]
+            return f"{repo_rel(Path(path))}:{lineno}"
+    return None
+
+
 def run_synthesis(v_file: Path) -> dict:
     version = _yosys_version()
     top = _infer_top_module(v_file)
@@ -45,11 +59,12 @@ def run_synthesis(v_file: Path) -> dict:
         stat_path = Path(tmp.name)
 
     # Run: read → synth → write stat JSON
-    # -p passes a script inline; stat -json writes machine-readable cell counts
+    # -p passes a script inline. stat has no output-file option: it prints
+    # JSON to the log, and tee -o captures that command's output in a file.
     script = (
         f"read_verilog -sv {sources}; "
         f"synth -top {top} -flatten; "
-        f"stat -json -outfile {stat_path}"
+        f"tee -q -o {stat_path} stat -json"
     )
 
     rc, stdout, stderr, duration_ms = run_tool(
@@ -62,12 +77,17 @@ def run_synthesis(v_file: Path) -> dict:
 
     if rc != 0 or error_count > 0:
         violations = []
-        for line in combined.splitlines():
+        lines = combined.splitlines()
+        for index, line in enumerate(lines):
             if re.match(r"ERROR:", line):
+                text = line.strip()
+                where = _error_location(lines, index)
+                if where and where not in text:
+                    text = f"{where}: {text}"
                 violations.append({
                     "type": "synthesis_error",
                     "severity": "error",
-                    "plain_text": line.strip()[:300],
+                    "plain_text": text[:300],
                 })
         stat_path.unlink(missing_ok=True)
         return check_obj(
@@ -91,7 +111,9 @@ def run_synthesis(v_file: Path) -> dict:
     }
 
     try:
-        stat = json.loads(stat_path.read_text())
+        text = stat_path.read_text()
+        # Tolerate any log text tee captured around the JSON object.
+        stat, _ = json.JSONDecoder().raw_decode(text[text.index("{"):])
         # Yosys stat JSON: {"design": {"num_cells": N, "num_wires": N, ...}}
         design = stat.get("design", stat)
         summary["cell_count"] = design.get("num_cells")
