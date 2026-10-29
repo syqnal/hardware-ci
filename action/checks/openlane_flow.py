@@ -89,6 +89,141 @@ def _missing_stage_violation(stage: str, excerpt: str) -> list[dict]:
         message = f"{message}\n\nLog excerpt:\n{excerpt[-4000:]}"
     return [{"type": "missing_openlane_report", "severity": "error", "plain_text": message[:5000]}]
 
+# ── OpenLane 2 metrics ─────────────────────────────────────────────────────────
+# OpenLane 2 writes every stage's numbers to <run>/final/metrics.json (also
+# metrics.csv): instance counts, timing, routing/Magic/KLayout DRC, LVS and
+# power. The per-report parsers below are the OpenLane 1 fallback.
+
+def _final_metrics(run_dir: Path) -> dict | None:
+    final = run_dir / "final"
+    path = final / "metrics.json"
+    try:
+        if path.is_file():
+            data = json.loads(path.read_text(errors="replace"))
+            return data if isinstance(data, dict) else None
+        csv_path = final / "metrics.csv"
+        if csv_path.is_file():
+            rows = [line.split(",", 1) for line in csv_path.read_text(errors="replace").splitlines()[1:] if "," in line]
+            return {k.strip(): v.strip() for k, v in rows}
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _num(metrics: dict, *keys: str) -> float | None:
+    for key in keys:
+        v = metrics.get(key)
+        try:
+            if v is None or v == "":
+                continue
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f == f and f not in (float("inf"), float("-inf")):  # skip NaN / inf
+            return f
+    return None
+
+
+def _int(metrics: dict, *keys: str) -> int | None:
+    v = _num(metrics, *keys)
+    return int(v) if v is not None else None
+
+
+def _synthesis_from_metrics(m: dict, top: str | None) -> dict | None:
+    cells = _int(m, "design__instance__count__stdcell", "design__instance__count")
+    if cells is None:
+        return None
+    area = _num(m, "design__instance__area__stdcell", "design__instance__area")
+    return {
+        "top_module": top, "topModule": top,
+        "cell_count": cells, "cellCount": cells,
+        "flop_count": None, "flopCount": None,
+        "estimated_area_um2": area, "estimatedAreaUm2": area,
+        "source": "openlane final metrics (post-route standard cells)",
+    }
+
+
+def _pnr_from_metrics(m: dict) -> dict | None:
+    drc = _int(m, "route__drc_errors")
+    if drc is None:
+        return None
+    util = _num(m, "design__instance__utilization__stdcell", "design__instance__utilization")
+    wire = _num(m, "route__wirelength")
+    die = _num(m, "design__die__area")
+    return {
+        "routing_drc_violations": drc, "routingDrcViolations": drc,
+        "utilization_pct": round(util * 100, 2) if util is not None else None,
+        "utilizationPct": round(util * 100, 2) if util is not None else None,
+        "wire_length_um": wire, "wireLengthUm": wire,
+        "die_area_um2": die, "dieAreaUm2": die,
+        "antenna_violating_nets": _int(m, "antenna__violating__nets"),
+    }
+
+
+def _sta_from_metrics(m: dict) -> dict | None:
+    ws = _num(m, "timing__setup__ws")
+    if ws is None:
+        return None
+    hold = _num(m, "timing__hold__ws")
+    tns = _num(m, "timing__setup__tns")
+    failing = _int(m, "timing__setup_vio__count")
+    return {
+        # wns_ns carries the worst setup slack itself (positive when met), as Syqnal shows it.
+        "wns_ns": ws, "wnsNs": ws,
+        "tns_ns": tns, "tnsNs": tns,
+        "failing_endpoints": failing, "failingEndpoints": failing,
+        "worst_hold_slack_ns": hold, "worstHoldSlackNs": hold,
+        "hold_violations": _int(m, "timing__hold_vio__count"),
+        "critical_path_ns": None, "criticalPathNs": None,
+    }
+
+
+def _drc_from_metrics(m: dict) -> dict | None:
+    magic = _int(m, "magic__drc_error__count")
+    klayout = _int(m, "klayout__drc_error__count")
+    if magic is None and klayout is None:
+        return None
+    total = (magic or 0) + (klayout or 0)
+    tool = "magic+klayout" if magic is not None and klayout is not None else ("magic" if magic is not None else "klayout")
+    return {"drc_violations": total, "drcViolations": total, "tool": tool,
+            "magic_drc_errors": magic, "klayout_drc_errors": klayout}
+
+
+def _power_from_metrics(m: dict) -> dict | None:
+    total = _num(m, "power__total")
+    if total is None:
+        return None
+    mw = lambda key: round(_num(m, key) * 1000, 6) if _num(m, key) is not None else None  # noqa: E731
+    s = {
+        "internal_power_mw": mw("power__internal__total"),
+        "switching_power_mw": mw("power__switching__total"),
+        "leakage_power_mw": mw("power__leakage__total"),
+        "total_power_mw": round(total * 1000, 6),
+    }
+    s.update({"internalPowerMw": s["internal_power_mw"], "switchingPowerMw": s["switching_power_mw"],
+              "leakagePowerMw": s["leakage_power_mw"], "totalPowerMw": s["total_power_mw"]})
+    return s
+
+
+def _lvs_from_metrics(m: dict, config_file: Path, version: str | None) -> dict | None:
+    errors = _int(m, "design__lvs_error__count")
+    if errors is None:
+        return None
+    return check_obj(
+        "LVS", config_file, "netgen", version,
+        status="PASS" if errors == 0 else "FAIL",
+        error_count=errors,
+        duration_ms=0,
+        violations=None if errors == 0 else [{
+            "type": "lvs_mismatch", "severity": "error",
+            "plain_text": f"LVS: {errors} difference(s) between layout and netlist "
+                          f"({_int(m, 'design__lvs_device_difference__count') or 0} device, "
+                          f"{_int(m, 'design__lvs_net_difference__count') or 0} net)",
+        }],
+        summary={"result": "match" if errors == 0 else "mismatch", "lvs_errors": errors, "lvsErrors": errors},
+    )
+
+
 # ── Report parsers ─────────────────────────────────────────────────────────────
 
 def _parse_synthesis(run_dir: Path) -> dict | None:
@@ -277,7 +412,8 @@ def _parse_lvs(run_dir: Path, tool_version: str | None) -> dict | None:
 
 def _parse_gdsii(run_dir: Path, config_dir: Path) -> tuple[dict, bool]:
     """Check that a final GDS was produced and is non-empty."""
-    gds_files = list((run_dir / "results" / "final" / "gds").glob("*.gds"))
+    # OpenLane 2: final/gds; OpenLane 1: results/final/gds
+    gds_files = list((run_dir / "final" / "gds").glob("*.gds")) or list((run_dir / "results" / "final" / "gds").glob("*.gds"))
     if not gds_files:
         gds_files = list(run_dir.rglob("*.gds"))
         gds_files = [f for f in gds_files if "final" in str(f) or "gds" in f.parent.name]
@@ -376,9 +512,14 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
 
     flow_excerpt = _openlane_log_excerpt(run_dir, combined)
     results: list[dict] = []
+    metrics = _final_metrics(run_dir) or {}
+    try:
+        design_name = json.loads(config_file.read_text(errors="replace")).get("DESIGN_NAME") if config_file.suffix == ".json" else None
+    except ValueError:
+        design_name = None
 
     # 1 — SYNTHESIS
-    synth_summary = _parse_synthesis(run_dir)
+    synth_summary = _synthesis_from_metrics(metrics, design_name) or _parse_synthesis(run_dir)
     synth_status = "PASS" if synth_summary and synth_summary.get("cell_count") else "FAIL"
     # Carry over placeholder fields the existing SYNTHESIS check already defines
     if synth_summary:
@@ -404,7 +545,14 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     ))
 
     # 2 — PNR (Place & Route)
-    pnr_summary, pnr_viol_count, pnr_violations = _parse_pnr(run_dir)
+    pnr_metrics = _pnr_from_metrics(metrics)
+    if pnr_metrics is not None:
+        count = pnr_metrics["routing_drc_violations"]
+        pnr_summary, pnr_viol_count = pnr_metrics, count
+        pnr_violations = [{"type": "routing_drc", "severity": "error",
+                           "plain_text": f"{count} routing DRC violation(s) after detailed routing"}] if count else []
+    else:
+        pnr_summary, pnr_viol_count, pnr_violations = _parse_pnr(run_dir)
     pnr_status = "PASS" if pnr_viol_count == 0 and pnr_summary.get("routing_drc_violations") is not None else (
         "FAIL" if pnr_viol_count > 0 else "ERROR"
     )
@@ -420,7 +568,12 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     ))
 
     # 3 — STA (Static Timing Analysis)
-    sta_summary, sta_passed = _parse_sta(run_dir)
+    sta_metrics = _sta_from_metrics(metrics)
+    if sta_metrics is not None:
+        sta_summary = sta_metrics
+        sta_passed = sta_metrics["wns_ns"] >= 0 and (sta_metrics.get("worst_hold_slack_ns") is None or sta_metrics["worst_hold_slack_ns"] >= 0)
+    else:
+        sta_summary, sta_passed = _parse_sta(run_dir)
     sta_status = "PASS" if sta_passed and sta_summary.get("wns_ns") is not None else (
         "FAIL" if not sta_passed else "ERROR"
     )
@@ -434,7 +587,13 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     ))
 
     # 4 — SILICON_DRC
-    drc_summary, drc_count, drc_violations = _parse_silicon_drc(run_dir)
+    drc_metrics = _drc_from_metrics(metrics)
+    if drc_metrics is not None:
+        drc_summary, drc_count = drc_metrics, drc_metrics["drc_violations"]
+        drc_violations = [{"type": "silicon_drc", "severity": "error",
+                           "plain_text": f"{drc_count} signoff DRC violation(s) ({drc_metrics['tool']})"}] if drc_count else []
+    else:
+        drc_summary, drc_count, drc_violations = _parse_silicon_drc(run_dir)
     drc_status = "PASS" if drc_summary.get("drc_violations") == 0 else (
         "FAIL" if drc_count > 0 else "ERROR"
     )
@@ -462,7 +621,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     ))
 
     # 6 — POWER (OpenROAD report_power, only if report exists)
-    power_summary = _parse_power(run_dir)
+    power_summary = _power_from_metrics(metrics) or _parse_power(run_dir)
     if power_summary is not None:
         results.append(check_obj(
             "POWER", config_file, "openroad", version,
@@ -473,7 +632,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
 
     # 7 — LVS (Netgen, only if report exists — OpenLane runs LVS as part of signoff)
     netgen_ver = _netgen_version()
-    lvs_check = _parse_lvs(run_dir, netgen_ver)
+    lvs_check = _lvs_from_metrics(metrics, config_file, netgen_ver) or _parse_lvs(run_dir, netgen_ver)
     if lvs_check is not None:
         results.append(lvs_check)
 
