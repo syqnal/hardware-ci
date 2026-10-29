@@ -125,6 +125,20 @@ ARG LXML_VERSION=6.1.3
 RUN pip3 install --break-system-packages --no-cache-dir \
       "openlane==${OPENLANE_VERSION}" "volare==${VOLARE_VERSION}" "lxml==${LXML_VERSION}"
 
+# OpenLane's `openroad -python` scripts run in OpenROAD's embedded Python 3.10,
+# which can't import the image's Python 3.12 packages. Link the pure-Python
+# ones they use into /opt/openroad-python; a wrapper adds it for -python runs.
+COPY action/bin/openroad-wrapper.py /tmp/openroad-wrapper.py
+RUN site=/usr/local/lib/python3.12/dist-packages && \
+    mkdir -p /opt/openroad-python && \
+    for pkg in click rich markdown_it mdurl pygments yaml ioplace_parser antlr4 typing_extensions.py; do \
+      test -e "$site/$pkg" && ln -s "$site/$pkg" "/opt/openroad-python/$pkg"; \
+    done && \
+    real="$(command -v openroad)" && mv "$real" "$real-real" && \
+    sed "s|@REAL_OPENROAD@|$real-real|" /tmp/openroad-wrapper.py > "$real" && chmod 0755 "$real" && \
+    printf 'import click, rich, yaml, ioplace_parser\nprint("openroad python ok")\n' > /tmp/or_check.py && \
+    timeout 120 openroad -python /tmp/or_check.py && rm -f /tmp/or_check.py /tmp/openroad-wrapper.py
+
 # OpenLane's `yosys -y` scripts go to the Yosys 0.46 + Python build; the
 # wrapper on PATH sends everything else to the pinned 0.66.
 COPY --from=yosys_openlane /opt/yosys-openlane /opt/yosys-openlane
