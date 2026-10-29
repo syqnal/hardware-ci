@@ -131,7 +131,7 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 COPY action/bin/openroad-wrapper.py /tmp/openroad-wrapper.py
 RUN site=/usr/local/lib/python3.12/dist-packages && \
     mkdir -p /opt/openroad-python && \
-    for pkg in click rich markdown_it mdurl pygments yaml ioplace_parser antlr4 typing_extensions.py; do \
+    for pkg in click rich markdown_it mdurl pygments yaml ioplace_parser _ioplace_parser_antlr antlr4 typing_extensions.py; do \
       test -e "$site/$pkg" && ln -s "$site/$pkg" "/opt/openroad-python/$pkg"; \
     done && \
     real="$(command -v openroad)" && mv "$real" "$real-real" && \
