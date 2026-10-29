@@ -53,10 +53,40 @@ def _openlane_log_excerpt(run_dir: Path | None, combined_output: str) -> str:
     return _tail_lines(combined_output)
 
 
+_STEP_RE = re.compile(r"Running '([^']+)'")
+_LAST_LINES_RE = re.compile(r"Last \d+ line\(s\):")
+_ERROR_LINE_RE = re.compile(r"\b(error|exception|fatal)\b", re.IGNORECASE)
+
+
+def _flow_failure(excerpt: str) -> str | None:
+    """'OpenLane stopped at <step>: <first error line>' from a flow log excerpt."""
+    lines = [l.strip() for l in excerpt.splitlines() if l.strip()]
+    step = None
+    for line in lines:
+        m = _STEP_RE.search(line)
+        if m:
+            step = m.group(1)
+    error = None
+    for i, line in enumerate(lines):
+        if _LAST_LINES_RE.search(line) and i + 1 < len(lines):
+            error = lines[i + 1]
+            break
+    if error is None:
+        errors = [l for l in lines if _ERROR_LINE_RE.search(l) and "clear" not in l.lower()]
+        error = errors[-1] if errors else None
+    if not step and not error:
+        return None
+    return f"OpenLane stopped at {step or 'an early step'}" + (f": {error}" if error else "")
+
+
 def _missing_stage_violation(stage: str, excerpt: str) -> list[dict]:
     message = f"OpenLane did not produce a {stage} report."
+    reason = _flow_failure(excerpt) if excerpt else None
+    if reason:
+        message = f"{reason}. {message}"
     if excerpt:
-        message = f"{message}\n\nLog excerpt:\n{excerpt}"
+        # Keep the end of the log: that's where the error is.
+        message = f"{message}\n\nLog excerpt:\n{excerpt[-4000:]}"
     return [{"type": "missing_openlane_report", "severity": "error", "plain_text": message[:5000]}]
 
 # ── Report parsers ─────────────────────────────────────────────────────────────
