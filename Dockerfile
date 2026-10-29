@@ -109,6 +109,19 @@ ARG LXML_VERSION=6.1.3
 RUN pip3 install --break-system-packages --no-cache-dir \
       "openlane==${OPENLANE_VERSION}" "volare==${VOLARE_VERSION}" "lxml==${LXML_VERSION}"
 
+# OpenLane 2 runs Yosys in Python mode (`yosys -y`), which the pinned Yosys
+# build lacks. pyosys is the same Yosys release as a Python module; a small
+# wrapper sends `-y` scripts to it and everything else to the real binary.
+# yosys-abc sits next to python3 because libyosys looks for it beside the
+# running executable.
+ARG PYOSYS_VERSION=0.66
+COPY action/bin/yosys-wrapper.py /usr/local/bin/yosys-wrapper.py
+RUN pip3 install --break-system-packages --no-cache-dir "pyosys==${PYOSYS_VERSION}" && \
+    mv /usr/local/bin/yosys /usr/local/bin/yosys-real && \
+    install -m 0755 /usr/local/bin/yosys-wrapper.py /usr/local/bin/yosys && \
+    ln -sf /usr/local/bin/yosys-abc /usr/bin/yosys-abc && \
+    yosys -V && python3 -c "from pyosys import libyosys as ys; print(ys.yosys_version_str if hasattr(ys, 'yosys_version_str') else 'pyosys ok')"
+
 # Build the image with the PDK available so CI runs do not fetch process data.
 # The build must fail if the PDK cannot be installed.
 ARG INSTALL_SKY130=true

@@ -1,0 +1,41 @@
+name: OpenLane smoke test
+
+# Runs the :edge image's OpenLane flow on a repo and keeps the whole run
+# directory, to check report parsing against real OpenLane output before a
+# release.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "owner/name of a repo with an OpenLane config.json"
+        default: "skillsbuffcom/tensorrail"
+      image:
+        description: "hardware-ci image to test"
+        default: "ghcr.io/syqnal/hardware-ci:edge"
+
+permissions:
+  contents: read
+
+jobs:
+  openlane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          path: target
+      - name: Run the OpenLane check
+        run: |
+          docker run --rm -v "$PWD/target:/work" -w /work \
+            -e INPUT_RUN_OPENLANE=true -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_REF_NAME \
+            "${{ inputs.image }}"
+          python3 -c "import json; d=json.load(open('target/syqnal-verification.json')); [print(c['type'], c['status'], json.dumps(c.get('summary'))[:400]) for c in d['checks']]"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openlane-run
+          path: |
+            target/syqnal-verification.json
+            target/**/runs/**
+          retention-days: 7
