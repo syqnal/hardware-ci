@@ -621,7 +621,8 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     ))
 
     # 6 — POWER (OpenROAD report_power, only if report exists)
-    power_summary = _power_from_metrics(metrics) or _parse_power(run_dir)
+    # Only a finished flow's power: a stopped run leaves pre-route estimates behind.
+    power_summary = _power_from_metrics(metrics) or (_parse_power(run_dir) if gds_ok else None)
     if power_summary is not None:
         results.append(check_obj(
             "POWER", config_file, "openroad", version,
