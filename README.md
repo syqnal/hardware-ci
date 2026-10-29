@@ -37,7 +37,7 @@ panel alongside top cell, layer count, bounding box, and file size metadata.
 The GitHub Action uses the prebuilt container image:
 
 ```text
-ghcr.io/syqnal/hardware-ci:2.5.9
+ghcr.io/syqnal/hardware-ci:2.5.10
 ```
 
 The image is intentionally heavy: it contains the hardware and IC toolchain plus
@@ -80,7 +80,7 @@ in the `Dockerfile`. Change a pin only in a release, and rerun a known project
 Build locally:
 
 ```bash
-docker build -t ghcr.io/syqnal/hardware-ci:2.5.9 .
+docker build -t ghcr.io/syqnal/hardware-ci:2.5.10 .
 ```
 
 Build with GF180 included:
@@ -88,14 +88,14 @@ Build with GF180 included:
 ```bash
 docker build \
   --build-arg INSTALL_GF180=true \
-  -t ghcr.io/syqnal/hardware-ci:2.5.9-gf180 .
+  -t ghcr.io/syqnal/hardware-ci:2.5.10-gf180 .
 ```
 
 Publish from GitHub:
 
 1. Push changes to `main`.
 2. Run **Publish hardware-ci image** from the Actions tab, or push a version tag.
-3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.9` exists before moving/updating the `v2` action tag.
+3. Confirm `ghcr.io/syqnal/hardware-ci:2.5.10` exists before moving/updating the `v2` action tag.
 
 Run against a local hardware project:
 
@@ -106,7 +106,7 @@ scripts/run-local-docker.sh /path/to/project
 To force a local image:
 
 ```bash
-SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.9 \
+SYQNAL_HARDWARE_CI_IMAGE=ghcr.io/syqnal/hardware-ci:2.5.10 \
   scripts/run-local-docker.sh /path/to/project
 ```
 
