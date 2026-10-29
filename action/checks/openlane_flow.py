@@ -205,6 +205,11 @@ def _sta_from_metrics(m: dict) -> dict | None:
         "failing_endpoints": failing, "failingEndpoints": failing,
         "worst_hold_slack_ns": hold, "worstHoldSlackNs": hold,
         "hold_violations": _int(m, "timing__hold_vio__count"),
+        # Register-to-register only: separates the design's own paths from
+        # port paths timed against OpenLane's assumed external delays.
+        "reg_to_reg_setup_slack_ns": _num(m, "timing__setup_r2r__ws"),
+        "regToRegSetupSlackNs": _num(m, "timing__setup_r2r__ws"),
+        "reg_to_reg_setup_violations": _int(m, "timing__setup_r2r_vio__count"),
         "critical_path_ns": None, "criticalPathNs": None,
     }
 
