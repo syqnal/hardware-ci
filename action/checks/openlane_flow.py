@@ -97,6 +97,23 @@ def _missing_stage_violation(stage: str, excerpt: str, stopped_step: str | None 
 # metrics.csv): instance counts, timing, routing/Magic/KLayout DRC, LVS and
 # power. The per-report parsers below are the OpenLane 1 fallback.
 
+def _latest_state(run_dir: Path) -> dict | None:
+    """state_out.json of the last step that ran: metrics and design views so far.
+
+    OpenLane 2 only writes final/ when the whole flow passes. A flow that ends
+    on deferred errors (an XOR mismatch, say) still leaves every metric here.
+    """
+    states = sorted(run_dir.glob("[0-9]*-*/state_out.json"), key=lambda p: int(p.parent.name.split("-", 1)[0]))
+    for path in reversed(states):
+        try:
+            data = json.loads(path.read_text(errors="replace"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def _final_metrics(run_dir: Path) -> dict | None:
     final = run_dir / "final"
     path = final / "metrics.json"
@@ -110,7 +127,18 @@ def _final_metrics(run_dir: Path) -> dict | None:
             return {k.strip(): v.strip() for k, v in rows}
     except (OSError, ValueError):
         return None
-    return None
+    state = _latest_state(run_dir)
+    metrics = state.get("metrics") if state else None
+    return metrics if isinstance(metrics, dict) and metrics else None
+
+
+def _deferred_errors(run_dir: Path) -> list[str]:
+    """Problems OpenLane deferred to the end of the flow (error.log), e.g. XOR differences."""
+    try:
+        text = (run_dir / "error.log").read_text(errors="replace")
+    except OSError:
+        return []
+    return [line.strip().rstrip(".").removesuffix(" - deferred").rstrip(".") for line in text.splitlines() if line.strip()]
 
 
 def _num(metrics: dict, *keys: str) -> float | None:
@@ -256,7 +284,7 @@ def _parse_pnr(run_dir: Path) -> tuple[dict, int]:
     summary: dict = {"routing_drc_violations": None, "utilization_pct": None, "wire_length_um": None}
     violations = []
 
-    drc_rpts = sorted((run_dir / "reports" / "routing").glob("*drc*"), reverse=True)
+    drc_rpts = sorted((p for p in (run_dir / "reports" / "routing").glob("*drc*") if p.is_file()), reverse=True)
     if drc_rpts:
         text = drc_rpts[0].read_text(errors="replace")
         m = re.search(r"^\s*Total\s+[Vv]iolations?:?\s*(\d+)", text, re.MULTILINE)
@@ -272,7 +300,7 @@ def _parse_pnr(run_dir: Path) -> tuple[dict, int]:
                             break
 
     # Parse utilization from OpenROAD log or summary
-    for rpt in (run_dir / "reports").rglob("*utilization*"):
+    for rpt in (p for p in (run_dir / "reports").rglob("*utilization*") if p.is_file()):
         text = rpt.read_text(errors="replace")
         m = re.search(r"Design\s+Utilization[^:]*:\s*([\d.]+)%", text, re.IGNORECASE)
         if m:
@@ -291,9 +319,9 @@ def _parse_sta(run_dir: Path) -> tuple[dict, bool]:
     summary: dict = {"wns_ns": None, "tns_ns": None, "failing_endpoints": None, "critical_path_ns": None}
     passed = True
 
-    sta_rpts = sorted((run_dir / "reports" / "signoff").glob("*sta*"), reverse=True)
+    sta_rpts = sorted((p for p in (run_dir / "reports" / "signoff").glob("*sta*") if p.is_file()), reverse=True)
     if not sta_rpts:
-        sta_rpts = sorted(run_dir.rglob("*_sta.rpt"), reverse=True)
+        sta_rpts = sorted((p for p in run_dir.rglob("*_sta.rpt") if p.is_file()), reverse=True)
 
     for rpt in sta_rpts:
         text = rpt.read_text(errors="replace")
@@ -326,9 +354,10 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
     violations = []
 
     # KLayout DRC (OpenLane2 style)
-    klayout_rpts = sorted((run_dir / "reports" / "signoff").glob("*drc*"), reverse=True)
+    # Files only: OpenLane 2 step directories match these patterns too (65-checker-klayoutdrc).
+    klayout_rpts = sorted((p for p in (run_dir / "reports" / "signoff").glob("*drc*") if p.is_file()), reverse=True)
     if not klayout_rpts:
-        klayout_rpts = sorted(run_dir.rglob("*klayout*drc*"), reverse=True)
+        klayout_rpts = sorted((p for p in run_dir.rglob("*klayout*drc*") if p.is_file()), reverse=True)
 
     if klayout_rpts:
         text = klayout_rpts[0].read_text(errors="replace")
@@ -347,7 +376,7 @@ def _parse_silicon_drc(run_dir: Path) -> tuple[dict, int]:
             return summary, count, violations
 
     # Magic DRC fallback
-    magic_rpts = sorted(run_dir.rglob("*magic*drc*"), reverse=True)
+    magic_rpts = sorted((p for p in run_dir.rglob("*magic*drc*") if p.is_file()), reverse=True)
     if magic_rpts:
         text = magic_rpts[0].read_text(errors="replace")
         count = len(re.findall(r"^\[ERROR\]", text, re.MULTILINE))
@@ -369,9 +398,9 @@ def _parse_power(run_dir: Path) -> dict | None:
         Total       1.61e-03  7.07e-04   5.14e-05   2.37e-03  100%
     Units are Watts; we convert to mW for readability.
     """
-    candidates = sorted((run_dir / "reports" / "signoff").glob("*power*"), reverse=True)
+    candidates = sorted((p for p in (run_dir / "reports" / "signoff").glob("*power*") if p.is_file()), reverse=True)
     if not candidates:
-        candidates = sorted(run_dir.rglob("*power*.rpt"), reverse=True)
+        candidates = sorted((p for p in run_dir.rglob("*power*.rpt") if p.is_file()), reverse=True)
     if not candidates:
         return None
 
@@ -405,9 +434,9 @@ def _parse_power(run_dir: Path) -> dict | None:
 def _parse_lvs(run_dir: Path, tool_version: str | None) -> dict | None:
     """Find and parse Netgen LVS report produced by OpenLane signoff."""
     # OpenLane2 places LVS reports under reports/signoff/ with *lvs* in the name
-    candidates = sorted((run_dir / "reports" / "signoff").glob("*lvs*"), reverse=True)
+    candidates = sorted((p for p in (run_dir / "reports" / "signoff").glob("*lvs*") if p.is_file()), reverse=True)
     if not candidates:
-        candidates = sorted(run_dir.rglob("*lvs*.rpt"), reverse=True)
+        candidates = sorted((p for p in run_dir.rglob("*lvs*.rpt") if p.is_file()), reverse=True)
     if not candidates:
         return None
     return run_lvs_from_report(candidates[0], tool_version)
@@ -415,8 +444,17 @@ def _parse_lvs(run_dir: Path, tool_version: str | None) -> dict | None:
 
 def _parse_gdsii(run_dir: Path, config_dir: Path) -> tuple[dict, bool]:
     """Check that a final GDS was produced and is non-empty."""
-    # OpenLane 2: final/gds; OpenLane 1: results/final/gds
-    gds_files = list((run_dir / "final" / "gds").glob("*.gds")) or list((run_dir / "results" / "final" / "gds").glob("*.gds"))
+    # OpenLane 2: final/gds, or the last step's GDS view when final/ wasn't written;
+    # OpenLane 1: results/final/gds
+    gds_files = list((run_dir / "final" / "gds").glob("*.gds"))
+    if not gds_files:
+        state = _latest_state(run_dir) or {}
+        view = state.get("gds")
+        if isinstance(view, str):
+            hits = [p for p in run_dir.rglob(Path(view).name) if p.is_file()]
+            gds_files = hits[:1]
+    if not gds_files:
+        gds_files = list((run_dir / "results" / "final" / "gds").glob("*.gds"))
     if not gds_files:
         gds_files = list(run_dir.rglob("*.gds"))
         gds_files = [f for f in gds_files if "final" in str(f) or "gds" in f.parent.name]
@@ -559,6 +597,10 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         pnr_summary, pnr_viol_count = pnr_metrics, count
         pnr_violations = [{"type": "routing_drc", "severity": "error",
                            "plain_text": f"{count} routing DRC violation(s) after detailed routing"}] if count else []
+        antenna = pnr_metrics.get("antenna_violating_nets")
+        if antenna:
+            pnr_violations.append({"type": "antenna", "severity": "warning",
+                                   "plain_text": f"{antenna} net(s) violate antenna rules (add diodes or enable antenna repair)"})
     else:
         pnr_summary, pnr_viol_count, pnr_violations = _parse_pnr(run_dir)
     pnr_status = "PASS" if pnr_viol_count == 0 and pnr_summary.get("routing_drc_violations") is not None else (
@@ -568,6 +610,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         "PNR", config_file, "openroad", version,
         status=pnr_status,
         error_count=pnr_viol_count if pnr_status != "ERROR" else 1,
+        warning_count=sum(1 for v in pnr_violations if v.get("severity") == "warning"),
         duration_ms=ms,
         violations=pnr_violations if pnr_violations else (
             _missing_stage_violation("place-and-route", flow_excerpt, stopped_step) if pnr_status == "ERROR" else None
@@ -588,7 +631,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     results.append(check_obj(
         "STA", config_file, "opensta", version,
         status=sta_status,
-        error_count=1 if sta_status == "ERROR" else 0,
+        error_count=1 if sta_status == "ERROR" else (sta_summary.get("failing_endpoints") or (1 if sta_status == "FAIL" else 0)),
         duration_ms=ms,
         violations=_missing_stage_violation("timing", flow_excerpt, stopped_step) if sta_status == "ERROR" else None,
         summary=sta_summary,
@@ -618,13 +661,22 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
 
     # 5 — GDSII
     gds_summary, gds_ok = _parse_gdsii(run_dir, config_dir)
+    # Problems OpenLane deferred to the end (XOR differences, power-grid notes)
+    # make it skip final/ but don't invalidate the layout: report them as warnings.
+    deferred = _deferred_errors(run_dir)
+    flow_complete = (run_dir / "final").is_dir()
+    gds_summary = {**gds_summary, "flow_complete": flow_complete, "flowComplete": flow_complete}
+    if deferred:
+        gds_summary["deferred_errors"] = deferred
     results.append(check_obj(
         "GDSII", config_file, "openlane", version,
         status="PASS" if gds_ok else "FAIL",
         error_count=0 if gds_ok else 1,
+        warning_count=len(deferred) if gds_ok else 0,
         duration_ms=ms,
-        violations=None if gds_ok else [{"type": "no_gds", "severity": "error",
-                                          "plain_text": f"OpenLane flow did not produce a final GDS.\n\nLog excerpt:\n{flow_excerpt}"[:5000]}],
+        violations=[{"type": "openlane_deferred", "severity": "warning", "plain_text": f"OpenLane: {d}"} for d in deferred] or None
+        if gds_ok else [{"type": "no_gds", "severity": "error",
+                         "plain_text": f"OpenLane flow did not produce a final GDS.\n\nLog excerpt:\n{flow_excerpt}"[:5000]}],
         summary={**gds_summary, "openlaneLogExcerpt": flow_excerpt} if not gds_ok else gds_summary,
     ))
 
