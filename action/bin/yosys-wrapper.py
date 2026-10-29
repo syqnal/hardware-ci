@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """`yosys` on PATH in the hardware-ci image.
 
-OpenLane 2 runs its synthesis scripts as `yosys -y script.py [-Q] [-q|-qq] -- args`,
-which needs a Yosys built with Python. The pinned Yosys (hdlc/yosys) isn't, so
-`-y` runs the script under python3 with the matching pyosys wheel (OpenLane's
-scripts import `pyosys.libyosys` when `libyosys` isn't built in). Everything
-else goes to the real binary unchanged.
+OpenLane 2.3.10 runs its synthesis scripts as `yosys -y script.py ... -- args`,
+written for Yosys 0.46's Python bindings. Those go to the Yosys 0.46 + Python
+build in /opt/yosys-openlane; everything else goes to the pinned Yosys 0.66.
 """
 
 import os
 import sys
 
 REAL_YOSYS = "/usr/local/bin/yosys-real"
+OPENLANE_YOSYS = "/opt/yosys-openlane/bin/yosys"
+OPENLANE_PYTHONPATH = "/opt/yosys-openlane/python"
 
 args = sys.argv[1:]
-if len(args) >= 2 and args[0] == "-y":
-    script, rest = args[1], args[2:]
-    # Yosys options before "--" (log level) don't apply to a plain python run.
-    rest = rest[rest.index("--") + 1:] if "--" in rest else [a for a in rest if a not in ("-Q", "-q", "-qq")]
-    os.execv(sys.executable, [sys.executable, script, *rest])
+if args and args[0] == "-y":
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (OPENLANE_PYTHONPATH, env.get("PYTHONPATH")) if p)
+    os.execve(OPENLANE_YOSYS, ["yosys", *args], env)
 os.execv(REAL_YOSYS, ["yosys", *args])

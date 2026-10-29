@@ -8,6 +8,22 @@
 # Yosys 0.66 (git 86f2ddebc). hdlc/yosys only publishes :latest, so pin the digest.
 FROM --platform=linux/amd64 hdlc/yosys:latest@sha256:4e4bce92f7555bbebd0d0b7cf196ed0ae0866652004c2cd8e1b5f6d5adb4823b AS yosys_tools
 
+# OpenLane 2.3.10 runs synthesis as Python scripts (`yosys -y`) written for
+# Yosys 0.46's Boost.Python bindings (the version its Nix build ships). Build
+# exactly that, with Python, for OpenLane alone; every other check keeps 0.66.
+FROM --platform=linux/amd64 ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c AS yosys_openlane
+ARG YOSYS_OPENLANE_REF=0.46
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential clang bison flex gawk git pkg-config ca-certificates \
+      libreadline-dev tcl-dev libffi-dev zlib1g-dev \
+      python3 python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev && \
+    git clone --depth 1 --branch "${YOSYS_OPENLANE_REF}" --recurse-submodules --shallow-submodules \
+      https://github.com/YosysHQ/yosys.git /src/yosys && \
+    make -C /src/yosys -j"$(nproc)" ENABLE_PYTHON=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
+    make -C /src/yosys install ENABLE_PYTHON=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
+    /opt/yosys-openlane/bin/yosys -V
+
 # Ubuntu 24.04 (noble): Verilator 5.020, Icarus Verilog 12.0, GHDL 4.1.0,
 # ngspice, KLayout 0.28.16, Magic 8.3.105 and Netgen come from noble's archive,
 # whose versions stay fixed for the release (security fixes only).
@@ -109,18 +125,18 @@ ARG LXML_VERSION=6.1.3
 RUN pip3 install --break-system-packages --no-cache-dir \
       "openlane==${OPENLANE_VERSION}" "volare==${VOLARE_VERSION}" "lxml==${LXML_VERSION}"
 
-# OpenLane 2 runs Yosys in Python mode (`yosys -y`), which the pinned Yosys
-# build lacks. pyosys is the same Yosys release as a Python module; a small
-# wrapper sends `-y` scripts to it and everything else to the real binary.
-# yosys-abc sits next to python3 because libyosys looks for it beside the
-# running executable.
-ARG PYOSYS_VERSION=0.66
+# OpenLane's `yosys -y` scripts go to the Yosys 0.46 + Python build; the
+# wrapper on PATH sends everything else to the pinned 0.66.
+COPY --from=yosys_openlane /opt/yosys-openlane /opt/yosys-openlane
 COPY action/bin/yosys-wrapper.py /usr/local/bin/yosys-wrapper.py
-RUN pip3 install --break-system-packages --no-cache-dir "pyosys==${PYOSYS_VERSION}" && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libboost-python1.83.0 libboost-filesystem1.83.0 libboost-system1.83.0 libtcl8.6 libreadline8t64 libffi8 && \
+    rm -rf /var/lib/apt/lists/* && \
     mv /usr/local/bin/yosys /usr/local/bin/yosys-real && \
     install -m 0755 /usr/local/bin/yosys-wrapper.py /usr/local/bin/yosys && \
-    ln -sf /usr/local/bin/yosys-abc /usr/bin/yosys-abc && \
-    yosys -V && python3 -c "from pyosys import libyosys as ys; print(ys.yosys_version_str if hasattr(ys, 'yosys_version_str') else 'pyosys ok')"
+    yosys -V && /opt/yosys-openlane/bin/yosys -V && \
+    PYTHONPATH=/opt/yosys-openlane/python python3 -c "from pyosys import libyosys as ys; ys.Design()"
 
 # Build the image with the PDK available so CI runs do not fetch process data.
 # The build must fail if the PDK cannot be installed.

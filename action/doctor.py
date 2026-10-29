@@ -19,6 +19,8 @@ REQUIRED_COMMANDS = [
     ("ngspice", ["ngspice", "--version"]),
     ("yosys", ["yosys", "--version"]),
     ("sby", ["sby", "--version"]),
+    # Yosys 0.46 + Python, for OpenLane's `yosys -y` scripts only
+    ("yosys-openlane", ["/opt/yosys-openlane/bin/yosys", "-V"]),
     # SMT solvers for sby's smtbmc engine ("smtbmc yices" is the usual default).
     ("yices-smt2", ["yices-smt2", "--version"]),
     ("z3", ["z3", "--version"]),

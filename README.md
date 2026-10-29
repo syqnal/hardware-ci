@@ -64,6 +64,7 @@ in the `Dockerfile`. Change a pin only in a release, and rerun a known project
 | Tool | Version | Pinned by |
 |---|---|---|
 | Yosys | 0.66 (git 86f2ddebc) | `hdlc/yosys` image digest |
+| Yosys for OpenLane | 0.46, built with Python | `YOSYS_OPENLANE_REF` (the version OpenLane 2.3.10 ships); only OpenLane's `yosys -y` scripts use it |
 | SymbiYosys | v0.66 | `SBY_REF` git tag |
 | Yices 2 | 2.7.0 | `YICES_VERSION` + `YICES_SHA256` (SRI static release) |
 | OpenLane | 2.3.10 | `OPENLANE_VERSION` (pip) |
