@@ -68,7 +68,7 @@ in the `Dockerfile`. Change a pin only in a release, and rerun a known project
 | SymbiYosys | v0.66 | `SBY_REF` git tag |
 | Yices 2 | 2.7.0 | `YICES_VERSION` + `YICES_SHA256` (SRI static release) |
 | OpenLane | 2.3.10 | `OPENLANE_VERSION` (pip) |
-| volare / lxml | 0.20.6 / 6.1.3 | `VOLARE_VERSION`, `LXML_VERSION` (pip) |
+| volare / lxml / ioplace-parser | 0.20.6 / 6.1.3 / 0.3.0 | `VOLARE_VERSION`, `LXML_VERSION`, `IOPLACE_PARSER_VERSION` (pip; 0.4.0 pins the wrong ANTLR runtime) |
 | OpenROAD | v2.0-17598-ga008522d8 | `OPENROAD_DEB_URL` |
 | sky130 PDK | fa87f8f4 | `SKY130_PDK_VERSION` |
 | Verilator, Icarus, GHDL, ngspice, KLayout, Magic, Netgen, z3, Boolector | 5.020, 12.0, 4.1.0, noble, 0.28.16, 8.3.105, noble, 4.8.12, 1.5.118 | `ubuntu:24.04` image digest (noble archive) |
