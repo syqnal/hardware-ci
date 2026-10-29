@@ -42,7 +42,7 @@ for cell in cells:
         if not cell.shapes(layer_idx).is_empty():
             layers.add((linfo.layer, linfo.datatype))
     b = cell.bbox()
-    if b.is_point() or not b.is_valid():
+    if b.empty() or b.is_point():
         continue
     if bbox is None:
         bbox = b
@@ -61,7 +61,7 @@ def layer_color(i):
     ]
     return palette[i % len(palette)]
 
-if top is not None and bbox is not None and bbox.is_valid():
+if top is not None and bbox is not None and not bbox.empty():
 
     width = max((bbox.right - bbox.left) * layout.dbu, 0.001)
     height = max((bbox.top - bbox.bottom) * layout.dbu, 0.001)
@@ -136,7 +136,7 @@ result = {
         "yMin": round(bbox.bottom * layout.dbu, 4),
         "xMax": round(bbox.right * layout.dbu, 4),
         "yMax": round(bbox.top  * layout.dbu, 4),
-    } if bbox and bbox.is_valid() else None,
+    } if bbox is not None and not bbox.empty() else None,
     "layout_preview_kind": "svg",
     "layoutPreviewKind": "svg",
     "layout_preview_source": "klayout_geometry",
