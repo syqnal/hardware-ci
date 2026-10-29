@@ -522,7 +522,8 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
     config_dir = config_file.parent
 
     rc, out, err, ms = run_tool(
-        ["python3", "-m", "openlane", "--pdk-root", pdk_root,
+        # --manual-pdk: use the PDK baked into the image, never download one.
+        ["python3", "-m", "openlane", "--manual-pdk", "--pdk-root", pdk_root,
          "--run-tag", "syqnal_ci", str(config_file.resolve())],
         cwd=config_dir,
         timeout=3600,

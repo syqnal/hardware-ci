@@ -186,7 +186,10 @@ RUN apt-get update && \
 # The build must fail if the PDK cannot be installed.
 ARG INSTALL_SKY130=true
 ARG INSTALL_GF180=false
-ARG SKY130_PDK_VERSION=fa87f8f4bbcc7255b6f0c0fb506960f531ae2392
+# The open_pdks revision OpenLane 2.3.10 pins (openlane/open_pdks_rev). Baking
+# exactly that one, with volare's default libraries, means OpenLane never
+# downloads a PDK at run time (GitHub rate limits made that fail at random).
+ARG SKY130_PDK_VERSION=0fe599b2afb6708d281543108caf8310912f54af
 ARG GF180_PDK_VERSION=
 RUN --mount=type=secret,id=github_token,required=false \
     mkdir -p /opt/pdks && \
@@ -195,8 +198,8 @@ RUN --mount=type=secret,id=github_token,required=false \
       token_args=(--token "$(cat /run/secrets/github_token)"); \
     fi && \
     if [[ "${INSTALL_SKY130}" == "true" ]]; then \
-      python3 -m volare fetch "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd "${SKY130_PDK_VERSION}" && \
-      python3 -m volare enable "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks --include-libraries sky130_fd_sc_hd "${SKY130_PDK_VERSION}"; \
+      python3 -m volare fetch "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks "${SKY130_PDK_VERSION}" && \
+      python3 -m volare enable "${token_args[@]}" --pdk sky130 --pdk-root /opt/pdks "${SKY130_PDK_VERSION}"; \
     fi && \
     if [[ "${INSTALL_GF180}" == "true" ]]; then \
       if [[ -z "${GF180_PDK_VERSION}" ]]; then echo "GF180_PDK_VERSION is required when INSTALL_GF180=true" >&2; exit 1; fi && \
