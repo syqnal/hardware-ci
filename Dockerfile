@@ -20,8 +20,8 @@ RUN apt-get update && \
       python3 python3-dev libboost-python-dev libboost-system-dev libboost-filesystem-dev && \
     git clone --depth 1 --branch "${YOSYS_OPENLANE_REF}" --recurse-submodules --shallow-submodules \
       https://github.com/YosysHQ/yosys.git /src/yosys && \
-    make -C /src/yosys -j"$(nproc)" ENABLE_PYTHON=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
-    make -C /src/yosys install ENABLE_PYTHON=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
+    make -C /src/yosys -j"$(nproc)" ENABLE_PYOSYS=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
+    make -C /src/yosys install ENABLE_PYOSYS=1 PREFIX=/opt/yosys-openlane PYTHON_DESTDIR=/opt/yosys-openlane/python && \
     /opt/yosys-openlane/bin/yosys -V
 
 # Ubuntu 24.04 (noble): Verilator 5.020, Icarus Verilog 12.0, GHDL 4.1.0,
