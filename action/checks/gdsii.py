@@ -23,7 +23,9 @@ import base64
 import json, sys
 import html
 
-path = sys.argv[1]
+# Passed as `-rd path=<gds>`: klayout -b treats trailing arguments as layouts
+# to open, not as script arguments, so sys.argv never held the path.
+path = globals().get("path") or sys.argv[-1]
 layout = pya.Layout()
 layout.read(path)
 
@@ -60,11 +62,6 @@ def layer_color(i):
     return palette[i % len(palette)]
 
 if top is not None and bbox is not None and bbox.is_valid():
-    # Flatten a copy of the top cell so the preview includes child instances.
-    try:
-        top.flatten(-1, True)
-    except Exception:
-        pass
 
     width = max((bbox.right - bbox.left) * layout.dbu, 0.001)
     height = max((bbox.top - bbox.bottom) * layout.dbu, 0.001)
@@ -74,19 +71,24 @@ if top is not None and bbox is not None and bbox.is_valid():
     layer_idx_out = 0
     for layer_idx in range(layout.layers()):
         linfo = layout.get_info(layer_idx)
-        shapes = top.shapes(layer_idx)
-        if shapes.is_empty():
+        # Walk the hierarchy (child instances included) instead of flattening
+        # the whole chip, and stop at the preview's shape budget.
+        it = top.begin_shapes_rec(layer_idx)
+        if it.at_end():
             continue
         color = layer_color(layer_idx_out)
         layer_idx_out += 1
         layer_label = html.escape(f"{linfo.layer}/{linfo.datatype}")
         paths.append(f'<g data-layer="{layer_label}" fill="{color}" fill-opacity="0.36" stroke="{color}" stroke-width="{max(width, height) * 0.0015}" stroke-opacity="0.95">')
-        for shape in shapes.each():
+        while not it.at_end():
             if preview_shape_count >= MAX_SHAPES:
                 preview_truncated = True
                 break
+            shape = it.shape()
+            trans = it.trans()
+            it.next()
             try:
-                poly = shape.polygon
+                poly = shape.polygon.transformed(trans)
                 pts = []
                 for pt in poly.each_point_hull():
                     x = pt.x * layout.dbu - x0
@@ -97,7 +99,7 @@ if top is not None and bbox is not None and bbox.is_valid():
                     preview_shape_count += 1
             except Exception:
                 try:
-                    b = shape.bbox()
+                    b = shape.bbox().transformed(trans)
                     x = b.left * layout.dbu - x0
                     y = height - (b.top * layout.dbu - y0)
                     w = max((b.right - b.left) * layout.dbu, 0.0001)
@@ -166,8 +168,8 @@ def inspect_layout_file(gds_file: Path) -> tuple[dict, list | None, str, int, st
 
     try:
         rc, out, err, ms = run_tool(
-            ["klayout", "-b", "-r", str(script_path), str(gds_file.resolve())],
-            timeout=60,
+            ["klayout", "-b", "-r", str(script_path), "-rd", f"path={gds_file.resolve()}"],
+            timeout=300,  # a routed chip's GDS is tens of MB
         )
     finally:
         script_path.unlink(missing_ok=True)
