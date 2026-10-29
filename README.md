@@ -71,7 +71,8 @@ in the `Dockerfile`. Change a pin only in a release, and rerun a known project
 | volare / lxml / ioplace-parser | 0.20.6 / 6.1.3 / 0.3.0 | `VOLARE_VERSION`, `LXML_VERSION`, `IOPLACE_PARSER_VERSION` (pip; 0.4.0 pins the wrong ANTLR runtime) |
 | OpenROAD | v2.0-17598-ga008522d8 | `OPENROAD_DEB_URL` |
 | sky130 PDK | fa87f8f4 | `SKY130_PDK_VERSION` |
-| Verilator, Icarus, GHDL, ngspice, KLayout, Magic, Netgen, z3, Boolector | 5.020, 12.0, 4.1.0, noble, 0.28.16, 8.3.105, noble, 4.8.12, 1.5.118 | `ubuntu:24.04` image digest (noble archive) |
+| Magic / Netgen | 8.3.489 / 1.5.278 | `MAGIC_REF`, `NETGEN_REF` git tags (built from source; OpenLane 2.3.10's versions) |
+| Verilator, Icarus, GHDL, ngspice, KLayout, z3, Boolector | 5.020, 12.0, 4.1.0, noble, 0.28.16, 4.8.12, 1.5.118 | `ubuntu:24.04` image digest (noble archive) |
 | KiCad CLI | nightly (10.99 at 2.5.6) | **not pinned**: the nightly PPA keeps only the newest build |
 
 `doctor.py` prints every tool's version during the image build.

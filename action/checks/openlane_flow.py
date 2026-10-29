@@ -79,9 +79,12 @@ def _flow_failure(excerpt: str) -> str | None:
     return f"OpenLane stopped at {step or 'an early step'}" + (f": {error}" if error else "")
 
 
-def _missing_stage_violation(stage: str, excerpt: str) -> list[dict]:
+def _missing_stage_violation(stage: str, excerpt: str, stopped_step: str | None = None) -> list[dict]:
     message = f"OpenLane did not produce a {stage} report."
     reason = _flow_failure(excerpt) if excerpt else None
+    # The excerpt may come from a step's own log; flow.log names the step that stopped.
+    if reason and stopped_step and "an early step" in reason:
+        reason = reason.replace("an early step", stopped_step)
     if reason:
         message = f"{reason}. {message}"
     if excerpt:
@@ -511,6 +514,11 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         )]
 
     flow_excerpt = _openlane_log_excerpt(run_dir, combined)
+    try:
+        steps = _STEP_RE.findall((run_dir / "flow.log").read_text(errors="replace"))
+    except OSError:
+        steps = []
+    stopped_step = steps[-1] if steps else None
     results: list[dict] = []
     metrics = _final_metrics(run_dir) or {}
     try:
@@ -540,7 +548,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         status=synth_status,
         duration_ms=ms,
         error_count=0 if synth_status == "PASS" else 1,
-        violations=None if synth_status == "PASS" else _missing_stage_violation("synthesis", flow_excerpt),
+        violations=None if synth_status == "PASS" else _missing_stage_violation("synthesis", flow_excerpt, stopped_step),
         summary=synth_summary,
     ))
 
@@ -562,7 +570,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         error_count=pnr_viol_count if pnr_status != "ERROR" else 1,
         duration_ms=ms,
         violations=pnr_violations if pnr_violations else (
-            _missing_stage_violation("place-and-route", flow_excerpt) if pnr_status == "ERROR" else None
+            _missing_stage_violation("place-and-route", flow_excerpt, stopped_step) if pnr_status == "ERROR" else None
         ),
         summary=pnr_summary,
     ))
@@ -582,7 +590,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         status=sta_status,
         error_count=1 if sta_status == "ERROR" else 0,
         duration_ms=ms,
-        violations=_missing_stage_violation("timing", flow_excerpt) if sta_status == "ERROR" else None,
+        violations=_missing_stage_violation("timing", flow_excerpt, stopped_step) if sta_status == "ERROR" else None,
         summary=sta_summary,
     ))
 
@@ -603,7 +611,7 @@ def run_openlane_flow(config_file: Path) -> list[dict]:
         error_count=drc_count if drc_status != "ERROR" else 1,
         duration_ms=ms,
         violations=drc_violations if drc_violations else (
-            _missing_stage_violation("silicon DRC", flow_excerpt) if drc_status == "ERROR" else None
+            _missing_stage_violation("silicon DRC", flow_excerpt, stopped_step) if drc_status == "ERROR" else None
         ),
         summary=drc_summary,
     ))

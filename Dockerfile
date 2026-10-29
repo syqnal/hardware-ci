@@ -8,6 +8,24 @@
 # Yosys 0.66 (git 86f2ddebc). hdlc/yosys only publishes :latest, so pin the digest.
 FROM --platform=linux/amd64 hdlc/yosys:latest@sha256:4e4bce92f7555bbebd0d0b7cf196ed0ae0866652004c2cd8e1b5f6d5adb4823b AS yosys_tools
 
+# Magic and Netgen at the versions OpenLane 2.3.10 ships: noble's Magic 8.3.105
+# can't read the current sky130 tech file (Magic.StreamOut fails), and its
+# Netgen 1.5.133 predates OpenLane's LVS setup.
+FROM --platform=linux/amd64 ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c AS magic_netgen
+ARG MAGIC_REF=8.3.489
+ARG NETGEN_REF=1.5.278
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential git ca-certificates m4 csh python3 \
+      tcl-dev tk-dev libx11-dev libcairo2-dev libncurses-dev zlib1g-dev && \
+    git clone --depth 1 --branch "${MAGIC_REF}" https://github.com/RTimothyEdwards/magic.git /src/magic && \
+    cd /src/magic && ./configure --prefix=/opt/eda --with-tcl=/usr/lib/tcl8.6 --with-tk=/usr/lib/tk8.6 --disable-werror && \
+    make -j"$(nproc)" && make install && \
+    git clone --depth 1 --branch "${NETGEN_REF}" https://github.com/RTimothyEdwards/netgen.git /src/netgen && \
+    cd /src/netgen && ./configure --prefix=/opt/eda --with-tcl=/usr/lib/tcl8.6 --with-tk=/usr/lib/tk8.6 && \
+    make -j"$(nproc)" && make install && \
+    /opt/eda/bin/magic --version
+
 # OpenLane 2.3.10 runs synthesis as Python scripts (`yosys -y`) written for
 # Yosys 0.46's Boost.Python bindings (the version its Nix build ships). Build
 # exactly that, with Python, for OpenLane alone; every other check keeps 0.66.
@@ -129,6 +147,13 @@ ARG IOPLACE_PARSER_VERSION=0.3.0
 RUN pip3 install --break-system-packages --no-cache-dir \
       "openlane==${OPENLANE_VERSION}" "volare==${VOLARE_VERSION}" "lxml==${LXML_VERSION}" \
       "ioplace-parser==${IOPLACE_PARSER_VERSION}"
+
+# Pinned Magic and Netgen in front of noble's (whose packages still provide
+# the Tcl/Tk/Cairo runtime).
+COPY --from=magic_netgen /opt/eda /opt/eda
+RUN ln -sf /opt/eda/bin/magic /usr/local/bin/magic && \
+    ln -sf /opt/eda/bin/netgen /usr/local/bin/netgen && \
+    magic --version && test -x /opt/eda/bin/netgen && test -d /opt/eda/lib/netgen
 
 # OpenLane's `openroad -python` scripts run in OpenROAD's embedded Python 3.10,
 # which can't import the image's Python 3.12 packages. Link the pure-Python
